@@ -119,7 +119,7 @@ jobs:
           echo "设备: ${DEVICE} | 系统: ${{ github.event.inputs.compiled_system }}"
           echo "KernelSU变体: ${{ github.event.inputs.kernelsu_variant }} | KPM: ${{ github.event.inputs.kpm_enable }}"
           echo "构建类型: ${{ github.event.inputs.build_type }}"
-          if [ ! -z ${{ github.event.inputs.manager_sign_size }} ] && [ ! -z ${{ github.event.inputs.manager_sign_hash }} && [ ! -z ${{ github.event.inputs.manager_package_name }} ]; then
+          if [ ! -z ${{ github.event.inputs.manager_sign_size }} ] && [ ! -z ${{ github.event.inputs.manager_sign_hash }} ] && [ ! -z ${{ github.event.inputs.manager_package_name }} ]; then
             echo "自定义管理器 - NAME: ${{ github.event.inputs.manager_package_name }} | SIZE：${{ github.event.inputs.manager_sign_size }} | HASH: ${{ github.event.inputs.manager_sign_hash }}"
           fi
 
@@ -458,7 +458,7 @@ jobs:
           fi
           
           # 设置自定义管理器签名
-          if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" && [ -n "${{ inputs.manager_package_name }}" ]; then
+          if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" ] && [ -n "${{ inputs.manager_package_name }}" ]; then
             echo "🔧 Use custom manager sign (使用自定义管理器签名)"
             ls -la ./KernelSU
             ls -la ./KernelSU/kernel
