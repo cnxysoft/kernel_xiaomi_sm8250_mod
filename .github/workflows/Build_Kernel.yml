@@ -64,6 +64,16 @@ on:
         options:
           - 'Release'
           - 'Dev'
+      manager_sign_size:
+        description: 'Manager sign Size (自定义管理器签名SIZE)'
+        required: false
+        type: string
+        default: ''
+      manager_sign_hash:
+        description: 'Manager sign Hash (自定义管理器签名HASH)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   prepare:
@@ -104,6 +114,9 @@ jobs:
           echo "设备: ${DEVICE} | 系统: ${{ github.event.inputs.compiled_system }}"
           echo "KernelSU变体: ${{ github.event.inputs.kernelsu_variant }} | KPM: ${{ github.event.inputs.kpm_enable }}"
           echo "构建类型: ${{ github.event.inputs.build_type }}"
+          if [ ! -z ${{ github.event.inputs.manager_sign_size }} ] && [ ! -z ${{ github.event.inputs.manager_sign_size }} ]; then
+            echo "自定义管理器签名 - SIZE：${{ github.event.inputs.manager_sign_size }} | HASH: ${{ github.event.inputs.manager_sign_hash }}"
+          fi
 
       - name: 🚀 Maximize build space (最大化构建空间)
         uses: easimon/maximize-build-space@master
@@ -201,7 +214,7 @@ jobs:
           echo "⚙️ Configure KernelSU Variants: $KSU_VARIANT (配置 KernelSU 变体: $KSU_VARIANT)"
           
           if [ "$KSU_VARIANT" == "SukiSU-Ultra" ]; then
-            curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/susfs-dev/kernel/setup.sh" | bash -s susfs-dev
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/susfs-main/kernel/setup.sh" | bash -s susfs-main
           elif [ "$KSU_VARIANT" == "RKSU" ]; then
             curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/susfs-v1.5.5/kernel/setup.sh" | bash -s susfs-v1.5.5
           elif [ "$KSU_VARIANT" == "KernelSU" ]; then
@@ -215,9 +228,17 @@ jobs:
       - name: 🔨 Build the kernel (构建内核)
         run: |
           cd "$KERNEL_SOURCE"
+
+          # 设置自定义管理器签名
+          if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" ]; then
+            echo "Use custom manager sign (使用自定义管理器签名)"
+            sed -i "s/KSU_EXPECTED_SIZE := 0x35c/KSU_EXPECTED_SIZE := ${{ inputs.manager_sign_size }}/g" kernel/Makefile || { echo "修改 KSU_EXPECTED_SIZE 失败"; exit 1; }
+            sed -i "s/KSU_EXPECTED_HASH := 947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef/KSU_EXPECTED_HASH := ${{ inputs.manager_sign_hash }}/g" kernel/Makefile || { echo "修改 KSU_EXPECTED_HASH 失败"; exit 1; }
+          fi
           
           # 设置环境变量
           export PATH="$TOOLCHAIN_DIR/clang/bin:$PATH"
+          
           
           # 定义构建参数
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -463,7 +484,7 @@ jobs:
           if [ "$KSU_VARIANT" == "SukiSU-Ultra" ] && [ "$KPM_ENABLE" == "enable" ]; then
             echo "🛠️ 正在修补 Image 文件..."
             cd "$KERNEL_SOURCE/out/arch/arm64/boot"
-            curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch
+            curl -LSs "https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/0.12.0/patch_linux" -o patch
             chmod 777 patch
             ./patch
             if [ $? -eq 0 ]; then
