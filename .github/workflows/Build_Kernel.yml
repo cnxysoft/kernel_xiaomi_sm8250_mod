@@ -460,12 +460,9 @@ jobs:
           # 设置自定义管理器签名
           if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" ] && [ -n "${{ inputs.manager_package_name }}" ]; then
             echo "🔧 Use custom manager sign (使用自定义管理器签名)"
-            ls -la ./KernelSU
-            ls -la ./KernelSU/kernel
-            sed -i "s/ifdef KSU_MANAGER_PACKAGE/ifdef KSU_MANAGER_PACKAGE\n KSU_MANAGER_PACKAGE := ${{ inputs.manager_package_name }}/g" ./KernelSU/kernel/Makefile || { echo "修改 KSU_MANAGER_PACKAGE 失败"; exit 1; }
+            sed -i "s/ifdef KSU_MANAGER_PACKAGE/KSU_MANAGER_PACKAGE := ${{ inputs.manager_package_name }}\nifdef KSU_MANAGER_PACKAGE/g" ./KernelSU/kernel/Makefile || { echo "修改 KSU_MANAGER_PACKAGE 失败"; exit 1; }
             sed -i "s/0x35c/${{ inputs.manager_sign_size }}/g" ./KernelSU/kernel/Makefile || { echo "修改 KSU_EXPECTED_SIZE 失败"; exit 1; }
             sed -i "s/947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef/${{ inputs.manager_sign_hash }}/g" ./KernelSU/kernel/Makefile || { echo "修改 KSU_EXPECTED_HASH 失败"; exit 1; }
-            cat ./KernelSU/kernel/Makefile
           fi
             
           # 开始构建
