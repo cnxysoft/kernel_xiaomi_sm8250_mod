@@ -454,9 +454,10 @@ jobs:
           
           # 设置自定义管理器签名
           if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" ]; then
-            echo "Use custom manager sign (使用自定义管理器签名)"
-            sed -i "s/0x35c/${{ inputs.manager_sign_size }}/g" ./common/drivers/Makefile || { echo "修改 KSU_EXPECTED_SIZE 失败"; exit 1; }
-            sed -i "s/947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef/${{ inputs.manager_sign_hash }}/g" ./common/drivers/Makefile || { echo "修改 KSU_EXPECTED_HASH 失败"; exit 1; }
+            echo "🔧 Use custom manager sign (使用自定义管理器签名)"
+            sed -i "s/0x35c/${{ inputs.manager_sign_size }}/g" Makefile || { echo "修改 KSU_EXPECTED_SIZE 失败"; exit 1; }
+            sed -i "s/947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef/${{ inputs.manager_sign_hash }}/g" Makefile || { echo "修改 KSU_EXPECTED_HASH 失败"; exit 1; }
+            cat Makefile
           fi
             
           # 开始构建
