@@ -220,7 +220,6 @@ jobs:
           
           if [ "$KSU_VARIANT" == "SukiSU-Ultra" ]; then
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/susfs-1.5.7/kernel/setup.sh" | bash -s susfs-1.5.7
-            ls -la
           elif [ "$KSU_VARIANT" == "RKSU" ]; then
             curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/susfs-v1.5.5/kernel/setup.sh" | bash -s susfs-v1.5.5
           elif [ "$KSU_VARIANT" == "KernelSU" ]; then
@@ -237,7 +236,6 @@ jobs:
           
           # 设置环境变量
           export PATH="$TOOLCHAIN_DIR/clang/bin:$PATH"
-          
           
           # 定义构建参数
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 LLVM=1 LLVM_IAS=1 \
