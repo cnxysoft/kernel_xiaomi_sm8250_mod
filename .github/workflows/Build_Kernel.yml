@@ -65,17 +65,17 @@ on:
           - 'Release'
           - 'Dev'
       manager_package_name:
-        description: 'Manager sign Size (自定义管理器签名SIZE)'
+        description: 'Manager package name (自定义管理器包名)'
         required: false
         type: string
         default: ''
       manager_sign_size:
-        description: 'Manager sign Size (自定义管理器签名SIZE)'
+        description: 'Manager sign Size (自定义管理器签名:SIZE)'
         required: false
         type: string
         default: ''
       manager_sign_hash:
-        description: 'Manager sign Hash (自定义管理器签名HASH)'
+        description: 'Manager sign Hash (自定义管理器签名:HASH)'
         required: false
         type: string
         default: ''
