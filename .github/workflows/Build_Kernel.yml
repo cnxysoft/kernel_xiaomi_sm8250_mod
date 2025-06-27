@@ -458,7 +458,7 @@ jobs:
           fi
           
           # 设置自定义管理器签名
-          if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" ]; then
+          if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" && [ -n "${{ inputs.manager_package_name }}" ]; then
             echo "🔧 Use custom manager sign (使用自定义管理器签名)"
             ls -la ./KernelSU
             ls -la ./KernelSU/kernel
