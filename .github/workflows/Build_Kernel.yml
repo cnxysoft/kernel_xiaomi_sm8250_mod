@@ -214,7 +214,7 @@ jobs:
           echo "⚙️ Configure KernelSU Variants: $KSU_VARIANT (配置 KernelSU 变体: $KSU_VARIANT)"
           
           if [ "$KSU_VARIANT" == "SukiSU-Ultra" ]; then
-            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/susfs-main/kernel/setup.sh" | bash -s susfs-main
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/susfs-1.5.7/kernel/setup.sh" | bash -s susfs-1.5.7
           elif [ "$KSU_VARIANT" == "RKSU" ]; then
             curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/susfs-v1.5.5/kernel/setup.sh" | bash -s susfs-v1.5.5
           elif [ "$KSU_VARIANT" == "KernelSU" ]; then
@@ -228,13 +228,6 @@ jobs:
       - name: 🔨 Build the kernel (构建内核)
         run: |
           cd "$KERNEL_SOURCE"
-
-          # 设置自定义管理器签名
-          if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" ]; then
-            echo "Use custom manager sign (使用自定义管理器签名)"
-            sed -i "s/KSU_EXPECTED_SIZE := 0x35c/KSU_EXPECTED_SIZE := ${{ inputs.manager_sign_size }}/g" kernel/Makefile || { echo "修改 KSU_EXPECTED_SIZE 失败"; exit 1; }
-            sed -i "s/KSU_EXPECTED_HASH := 947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef/KSU_EXPECTED_HASH := ${{ inputs.manager_sign_hash }}/g" kernel/Makefile || { echo "修改 KSU_EXPECTED_HASH 失败"; exit 1; }
-          fi
           
           # 设置环境变量
           export PATH="$TOOLCHAIN_DIR/clang/bin:$PATH"
@@ -456,6 +449,13 @@ jobs:
             fi
 
             sed -i "s/echo \"\$res\"/echo \"${custom_part}\"/g" "$KERNEL_SOURCE/scripts/setlocalversion"
+          fi
+          
+          # 设置自定义管理器签名
+          if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" ]; then
+            echo "Use custom manager sign (使用自定义管理器签名)"
+            sed -i "s/KSU_EXPECTED_SIZE := 0x35c/KSU_EXPECTED_SIZE := ${{ inputs.manager_sign_size }}/g" kernel/Makefile || { echo "修改 KSU_EXPECTED_SIZE 失败"; exit 1; }
+            sed -i "s/KSU_EXPECTED_HASH := 947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef/KSU_EXPECTED_HASH := ${{ inputs.manager_sign_hash }}/g" kernel/Makefile || { echo "修改 KSU_EXPECTED_HASH 失败"; exit 1; }
           fi
             
           # 开始构建
