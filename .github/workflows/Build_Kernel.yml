@@ -88,7 +88,7 @@ jobs:
     steps:
       - id: set-matrix
         run: |
-          DEVICES="${{ github.event.inputs.target_devices }}"
+          DEVICES="${{ inputs.target_devices }}"
           if [ "$DEVICES" == "all" ]; then
             DEVICES="umi,cmi,cas,thyme,munch,dagu,elish,enuma,alioth,apollo,lmi,psyche,pipa"
           fi
@@ -116,11 +116,14 @@ jobs:
     steps:
       - name: 📢 Build Information (构建信息)
         run: |
-          echo "设备: ${DEVICE} | 系统: ${{ github.event.inputs.compiled_system }}"
-          echo "KernelSU变体: ${{ github.event.inputs.kernelsu_variant }} | KPM: ${{ github.event.inputs.kpm_enable }}"
-          echo "构建类型: ${{ github.event.inputs.build_type }}"
-          if [ ! -z ${{ github.event.inputs.manager_sign_size }} ] && [ ! -z ${{ github.event.inputs.manager_sign_hash }} ] && [ ! -z ${{ github.event.inputs.manager_package_name }} ]; then
-            echo "自定义管理器 - NAME: ${{ github.event.inputs.manager_package_name }} | SIZE：${{ github.event.inputs.manager_sign_size }} | HASH: ${{ github.event.inputs.manager_sign_hash }}"
+          echo "设备: ${DEVICE} | 系统: ${{ inputs.compiled_system }}"
+          echo "KernelSU变体: ${{ inputs.kernelsu_variant }} | KPM: ${{ inputs.kpm_enable }}"
+          echo "构建类型: ${{ inputs.build_type }}"
+          if [ ! -z ${{ inputs.manager_sign_size }} ] && [ ! -z ${{ inputs.manager_sign_hash }} ] && [ ! -z ${{ inputs.manager_package_name }} ]; then
+            echo "自定义管理器 - NAME: ${{ inputs.manager_package_name }} | SIZE：${{ inputs.manager_sign_size }} | HASH: ${{ inputs.manager_sign_hash }}"
+            echo "CUSTOM_MANAGER=CUSMGR" >> $GITHUB_ENV
+          else
+            echo "CUSTOM_MANAGER=ORGMGR" >> $GITHUB_ENV
           fi
 
       - name: 🚀 Maximize build space (最大化构建空间)
@@ -157,9 +160,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache
-          key: ccache-${{ github.event.inputs.compiled_system }}-${{ hashFiles('**/Makefile') }}
+          key: ccache-${{ inputs.compiled_system }}-${{ hashFiles('**/Makefile') }}
           restore-keys: |
-            ccache-${{ github.event.inputs.compiled_system }}-
+            ccache-${{ inputs.compiled_system }}-
             ccache-
             
       - name: 📥 Cloning kernel source code （克隆内核源码）
@@ -214,7 +217,7 @@ jobs:
         run: |
           cd "$KERNEL_SOURCE"
           
-          KSU_VARIANT="${{ github.event.inputs.kernelsu_variant }}"
+          KSU_VARIANT="${{ inputs.kernelsu_variant }}"
           
           echo "⚙️ Configure KernelSU Variants: $KSU_VARIANT (配置 KernelSU 变体: $KSU_VARIANT)"
           
@@ -248,10 +251,10 @@ jobs:
             O=out"
           
           # 获取参数
-          SYSTEM="${{ github.event.inputs.compiled_system }}"
-          KSU="${{ github.event.inputs.kernelsu_variant }}"
-          KPM="${{ github.event.inputs.kpm_enable }}"
-          VERSION="${{ github.event.inputs.kernel_version }}"
+          SYSTEM="${{ inputs.compiled_system }}"
+          KSU="${{ inputs.kernelsu_variant }}"
+          KPM="${{ inputs.kpm_enable }}"
+          VERSION="${{ inputs.kernel_version }}"
           
           # 生成设备配置
           echo "🔧 Generating ${DEVICE} configuration... (正在生成 ${DEVICE} 的配置)"
@@ -364,6 +367,65 @@ jobs:
           # 根据系统类型修改配置
           if [ "$SYSTEM" == "MIUI" ]; then
               echo "🔧 Apply MIUI specific configurations... (应用 MIUI 特定配置)"
+              
+              # 设定 dts 路径
+              dts_source=arch/arm64/boot/dts/vendor/qcom
+
+              # Backup dts
+              cp -a ${dts_source} .dts.bak
+
+              # Correct panel dimensions on MIUI builds
+              sed -i 's/<154>/<1537>/g' ${dts_source}/dsi-panel-j1s*
+              sed -i 's/<154>/<1537>/g' ${dts_source}/dsi-panel-j2*
+              sed -i 's/<155>/<1544>/g' ${dts_source}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi
+              sed -i 's/<155>/<1545>/g' ${dts_source}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi
+              sed -i 's/<155>/<1546>/g' ${dts_source}/dsi-panel-k11a-38-08-0a-dsc-cmd.dtsi
+              sed -i 's/<155>/<1546>/g' ${dts_source}/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
+              sed -i 's/<70>/<695>/g' ${dts_source}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi
+              sed -i 's/<70>/<695>/g' ${dts_source}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi
+              sed -i 's/<70>/<695>/g' ${dts_source}/dsi-panel-k11a-38-08-0a-dsc-cmd.dtsi
+              sed -i 's/<70>/<695>/g' ${dts_source}/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
+              sed -i 's/<71>/<710>/g' ${dts_source}/dsi-panel-j1s*
+              sed -i 's/<71>/<710>/g' ${dts_source}/dsi-panel-j2*
+
+              # Enable back mi smartfps while disabling qsync min refresh-rate
+              sed -i 's/\/\/ mi,mdss-dsi-pan-enable-smart-fps/mi,mdss-dsi-pan-enable-smart-fps/g' ${dts_source}/dsi-panel*
+              sed -i 's/\/\/ mi,mdss-dsi-smart-fps-max_framerate/mi,mdss-dsi-smart-fps-max_framerate/g' ${dts_source}/dsi-panel*
+              sed -i 's/\/\/ qcom,mdss-dsi-pan-enable-smart-fps/qcom,mdss-dsi-pan-enable-smart-fps/g' ${dts_source}/dsi-panel*
+              sed -i 's/qcom,mdss-dsi-qsync-min-refresh-rate/\/\/qcom,mdss-dsi-qsync-min-refresh-rate/g' ${dts_source}/dsi-panel*
+
+              # Enable back refresh rates supported on MIUI
+              sed -i 's/120 90 60/120 90 60 50 30/g' ${dts_source}/dsi-panel-g7a-36-02-0c-dsc-video.dtsi
+              sed -i 's/120 90 60/120 90 60 50 30/g' ${dts_source}/dsi-panel-g7a-37-02-0a-dsc-video.dtsi
+              sed -i 's/120 90 60/120 90 60 50 30/g' ${dts_source}/dsi-panel-g7a-37-02-0b-dsc-video.dtsi
+              sed -i 's/144 120 90 60/144 120 90 60 50 48 30/g' ${dts_source}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi
+
+              # Enable back brightness control from dtsi
+              sed -i 's/\/\/39 00 00 00 00 00 03 51 03 FF/39 00 00 00 00 00 03 51 03 FF/g' ${dts_source}/dsi-panel-j9-38-0a-0a-fhd-video.dtsi
+              sed -i 's/\/\/39 00 00 00 00 00 03 51 0D FF/39 00 00 00 00 00 03 51 0D FF/g' ${dts_source}/dsi-panel-j2-p2-1-38-0c-0a-dsc-cmd.dtsi
+              sed -i 's/\/\/39 00 00 00 00 00 05 51 0F 8F 00 00/39 00 00 00 00 00 05 51 0F 8F 00 00/g' ${dts_source}/dsi-panel-j1s-42-02-0a-dsc-cmd.dtsi
+              sed -i 's/\/\/39 00 00 00 00 00 05 51 0F 8F 00 00/39 00 00 00 00 00 05 51 0F 8F 00 00/g' ${dts_source}/dsi-panel-j1s-42-02-0a-mp-dsc-cmd.dtsi
+              sed -i 's/\/\/39 00 00 00 00 00 05 51 0F 8F 00 00/39 00 00 00 00 00 05 51 0F 8F 00 00/g' ${dts_source}/dsi-panel-j2-mp-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 00 00 00 00 00 05 51 0F 8F 00 00/39 00 00 00 00 00 05 51 0F 8F 00 00/g' ${dts_source}/dsi-panel-j2-p2-1-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 00 00 00 00 00 05 51 0F 8F 00 00/39 00 00 00 00 00 05 51 0F 8F 00 00/g' ${dts_source}/dsi-panel-j2s-mp-42-02-0a-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 00 00/39 01 00 00 00 00 03 51 00 00/g' ${dts_source}/dsi-panel-j2-38-0c-0a-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 00 00/39 01 00 00 00 00 03 51 00 00/g' ${dts_source}/dsi-panel-j2-38-0c-0a-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 03 FF/39 01 00 00 00 00 03 51 03 FF/g' ${dts_source}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 03 FF/39 01 00 00 00 00 03 51 03 FF/g' ${dts_source}/dsi-panel-j9-38-0a-0a-fhd-video.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 07 FF/39 01 00 00 00 00 03 51 07 FF/g' ${dts_source}/dsi-panel-j1u-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 07 FF/39 01 00 00 00 00 03 51 07 FF/g' ${dts_source}/dsi-panel-j2-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 07 FF/39 01 00 00 00 00 03 51 07 FF/g' ${dts_source}/dsi-panel-j2-p1-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 0F FF/39 01 00 00 00 00 03 51 0F FF/g' ${dts_source}/dsi-panel-j1u-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 0F FF/39 01 00 00 00 00 03 51 0F FF/g' ${dts_source}/dsi-panel-j2-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 03 51 0F FF/39 01 00 00 00 00 03 51 0F FF/g' ${dts_source}/dsi-panel-j2-p1-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 05 51 07 FF 00 00/39 01 00 00 00 00 05 51 07 FF 00 00/g' ${dts_source}/dsi-panel-j1s-42-02-0a-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 05 51 07 FF 00 00/39 01 00 00 00 00 05 51 07 FF 00 00/g' ${dts_source}/dsi-panel-j1s-42-02-0a-mp-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 05 51 07 FF 00 00/39 01 00 00 00 00 05 51 07 FF 00 00/g' ${dts_source}/dsi-panel-j2-mp-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 05 51 07 FF 00 00/39 01 00 00 00 00 05 51 07 FF 00 00/g' ${dts_source}/dsi-panel-j2-p2-1-42-02-0b-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 00 00 05 51 07 FF 00 00/39 01 00 00 00 00 05 51 07 FF 00 00/g' ${dts_source}/dsi-panel-j2s-mp-42-02-0a-dsc-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 01 00 03 51 03 FF/39 01 00 00 01 00 03 51 03 FF/g' ${dts_source}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi
+              sed -i 's/\/\/39 01 00 00 11 00 03 51 03 FF/39 01 00 00 11 00 03 51 03 FF/g' ${dts_source}/dsi-panel-j2-p2-1-38-0c-0a-dsc-cmd.dtsi
+
               scripts/config --file out/.config \
                   --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
                   -e PERF_CRITICAL_RT_TASK \
@@ -456,7 +518,7 @@ jobs:
           fi
           
           # 设置自定义管理器签名
-          if [ -n "${{ inputs.manager_sign_size }}" ] && [ -n "${{ inputs.manager_sign_hash }}" ] && [ -n "${{ inputs.manager_package_name }}" ]; then
+          if [ "$CUSTOM_MANAGER" == "CUSMGR" ]; then
             echo "🔧 Use custom manager sign (使用自定义管理器签名)"
             sed -i "s/ifdef KSU_MANAGER_PACKAGE/KSU_MANAGER_PACKAGE := ${{ inputs.manager_package_name }}\nifdef KSU_MANAGER_PACKAGE/g" ./KernelSU/kernel/Makefile || { echo "修改 KSU_MANAGER_PACKAGE 失败"; exit 1; }
             sed -i "s/0x35c/${{ inputs.manager_sign_size }}/g" ./KernelSU/kernel/Makefile || { echo "修改 KSU_EXPECTED_SIZE 失败"; exit 1; }
@@ -469,6 +531,8 @@ jobs:
             
           # 验证构建结果
           if [ -f "$KERNEL_SOURCE/out/arch/arm64/boot/Image" ]; then
+              echo "🔧 Generating dtb file (生成设备描述文件)"
+              find out/arch/arm64/boot/dts -name '*.dtb' -exec cat {} + >out/arch/arm64/boot/dtb
               echo "✅ Kernel Build Successful (内核构建成功)"
           else
               echo "❌ Kernel build failure (内核构建失败)"
@@ -483,8 +547,8 @@ jobs:
 
       - name: 🛠️ KPM Patching Image Files (KPM 修补 Image 文件)
         run: |
-          KSU_VARIANT="${{ github.event.inputs.kernelsu_variant }}"
-          KPM_ENABLE="${{ github.event.inputs.kpm_enable }}"
+          KSU_VARIANT="${{ inputs.kernelsu_variant }}"
+          KPM_ENABLE="${{ inputs.kpm_enable }}"
           
           if [ "$KSU_VARIANT" == "SukiSU-Ultra" ] && [ "$KPM_ENABLE" == "enable" ]; then
             echo "🛠️ 正在修补 Image 文件..."
@@ -518,13 +582,14 @@ jobs:
       - name: 📦 Package kernel to AnyKernel3 (打包内核到 AnyKernel3)
         run: |
           # 定义变量
-          SYSTEM="${{ github.event.inputs.compiled_system }}"
-          KSU="${{ github.event.inputs.kernelsu_variant }}"
-          BUILD_TYPE="${{ github.event.inputs.build_type }}"
+          SYSTEM="${{ inputs.compiled_system }}"
+          KSU="${{ inputs.kernelsu_variant }}"
+          BUILD_TYPE="${{ inputs.build_type }}"
           BUILD_ID="${{ env.GIT_COMMIT_ID }}"
           BUILD_DATE="${{ env.BUILD_DATE }}"
-          ZIP_NAME="${DEVICE}_${KSU}_${SYSTEM}_${BUILD_DATE}_${BUILD_ID}_${BUILD_TYPE}.zip"
-          
+
+          ZIP_NAME="${DEVICE}_${KSU}_${CUSTOM_MANAGER}_${SYSTEM}_${BUILD_DATE}_${BUILD_ID}_${BUILD_TYPE}.zip"
+
           echo "📦 Create AnyKernel3 package (创建 AnyKernel3 刷机包)"
           
           # 创建目录并克隆 AnyKernel3
@@ -538,6 +603,9 @@ jobs:
           
           # 复制内核镜像
           cp "$KERNEL_SOURCE/out/arch/arm64/boot/Image" ./
+
+          # 复制设备描述文件
+          cp "$KERNEL_SOURCE/out/arch/arm64/boot/dtb" ./
           
           # 打包
           echo "📦 Flashing package being created (正在创建刷机包): $ZIP_NAME"
@@ -600,26 +668,28 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: /home/runner/work/kernel_xiaomi_sm8250_mod/kernel_xiaomi_sm8250_mod/release/*.zip
-        name: Kernel_（${{ env.TARGET_DEVICES }}）_${{ github.event.inputs.kernelsu_variant }}_${{ github.event.inputs.compiled_system }}_${{ env.RELEASE_DATE }}_${{ env.GIT_COMMIT_ID }}_${{ github.event.inputs.build_type }}
-        tag_name: Kernel_（${{ env.TARGET_DEVICES }}）_${{ github.event.inputs.kernelsu_variant }}_${{ github.event.inputs.compiled_system }}_${{ env.RELEASE_DATE }}_${{ env.GIT_COMMIT_ID }}
+        name: Kernel_（${{ env.TARGET_DEVICES }}）_${{ inputs.kernelsu_variant }}_${{ inputs.compiled_system }}_${{ env.RELEASE_DATE }}_${{ env.GIT_COMMIT_ID }}_${{ inputs.build_type }}
+        tag_name: Kernel_（${{ env.TARGET_DEVICES }}）_${{ inputs.kernelsu_variant }}_${{ inputs.compiled_system }}_${{ env.RELEASE_DATE }}_${{ env.GIT_COMMIT_ID }}
         body: |
           ## 📱kernel build information | 内核构建信息
       
           ### 🌐 英文 | English
           - **Target Device:** ${{ env.TARGET_DEVICES }}
-          - **Compiled System:** ${{ github.event.inputs.compiled_system }}
-          - **KernelSU Variant:** ${{ github.event.inputs.kernelsu_variant }}
-          - **KPM Support:** ${{ github.event.inputs.kpm_enable }}
-          - **Build Type:** ${{ github.event.inputs.build_type }}
+          - **Compiled System:** ${{ inputs.compiled_system }}
+          - **KernelSU Variant:** ${{ inputs.kernelsu_variant }}
+          - **KernelSU Manager:** ${{ env.CUSTOM_MANAGER }} 
+          - **KPM Support:** ${{ inputs.kpm_enable }}
+          - **Build Type:** ${{ inputs.build_type }}
           - **Build Date:** ${{ env.RELEASE_DATE }}
           - **Commit ID:** ${{ env.GIT_COMMIT_ID }}
       
           ### 🇨🇳 中文 | Chinese
           - **目标机型:** ${{ env.TARGET_DEVICES }}
-          - **适用系统:** ${{ github.event.inputs.compiled_system }}
-          - **KernelSU变体:** ${{ github.event.inputs.kernelsu_variant }}
-          - **KPM支持:** ${{ github.event.inputs.kpm_enable }}
-          - **构建类型:** ${{ github.event.inputs.build_type }}
+          - **适用系统:** ${{ inputs.compiled_system }}
+          - **KernelSU变体:** ${{ inputs.kernelsu_variant }}
+          - **KernelSU管理器:** ${{ env.CUSTOM_MANAGER }} 
+          - **KPM支持:** ${{ inputs.kpm_enable }}
+          - **构建类型:** ${{ inputs.build_type }}
           - **构建日期:** ${{ env.RELEASE_DATE }}
           - **提交ID:** ${{ env.GIT_COMMIT_ID }}
       
