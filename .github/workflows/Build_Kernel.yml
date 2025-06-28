@@ -683,7 +683,7 @@ jobs:
           - **Target Device:** ${{ env.TARGET_DEVICES }}
           - **Compiled System:** ${{ inputs.compiled_system }}
           - **KernelSU Variant:** ${{ inputs.kernelsu_variant }}
-          - **KernelSU Manager:** ${{ env.CUSTOM_MANAGER }} 
+          - **KernelSU Manager:** ${{ CUSTOM_MANAGER }} 
           - **KPM Support:** ${{ inputs.kpm_enable }}
           - **Build Type:** ${{ inputs.build_type }}
           - **Build Date:** ${{ env.RELEASE_DATE }}
@@ -693,7 +693,7 @@ jobs:
           - **目标机型:** ${{ env.TARGET_DEVICES }}
           - **适用系统:** ${{ inputs.compiled_system }}
           - **KernelSU变体:** ${{ inputs.kernelsu_variant }}
-          - **KernelSU管理器:** ${{ env.CUSTOM_MANAGER }} 
+          - **KernelSU管理器:** ${{ CUSTOM_MANAGER }} 
           - **KPM支持:** ${{ inputs.kpm_enable }}
           - **构建类型:** ${{ inputs.build_type }}
           - **构建日期:** ${{ env.RELEASE_DATE }}
