@@ -368,10 +368,10 @@ jobs:
           if [ "$SYSTEM" == "MIUI" ]; then
               echo "🔧 Apply MIUI specific configurations... (应用 MIUI 特定配置)"
               
-              # 设定 dts 路径
+              # 设定设备树源文件路径
               dts_source=arch/arm64/boot/dts/vendor/qcom
 
-              # Backup dts
+              # 备份设备树源文件
               cp -a ${dts_source} .dts.bak
 
               # Correct panel dimensions on MIUI builds
@@ -531,8 +531,14 @@ jobs:
             
           # 验证构建结果
           if [ -f "$KERNEL_SOURCE/out/arch/arm64/boot/Image" ]; then
-              echo "🔧 Generating dtb file (生成设备描述文件)"
+              # 生成设备树文件
+              echo "🔧 Generating dtb file (生成设备树文件)"
               find out/arch/arm64/boot/dts -name '*.dtb' -exec cat {} + >out/arch/arm64/boot/dtb
+
+              # 还原修改后的设备树源文件
+              rm -rf ${dts_source}
+              mv .dts.bak ${dts_source}
+
               echo "✅ Kernel Build Successful (内核构建成功)"
           else
               echo "❌ Kernel build failure (内核构建失败)"
