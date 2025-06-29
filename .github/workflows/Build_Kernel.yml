@@ -275,6 +275,8 @@ jobs:
           # 修改 kernel/cgroup/cgroup.c (追加兼容层初始化代码)
           cat >> kernel/cgroup/cgroup.c << 'EOF'
           
+          #include <linux/version.h>   // 添加这一行解决宏定义问题
+          
           #ifdef CONFIG_CGROUP_COMPAT
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           static int __init cgroup_compat_init(void)
@@ -294,7 +296,7 @@ jobs:
           # 修改 kernel/cgroup/Makefile
           sed -i '/^obj-y :=/a obj-y += compat.o' kernel/cgroup/Makefile
           
-          echo "✅ cgroup v2 compatibility layer added"
+          echo "✅ cgroup v2 compatibility layer added (已添加 cgroup v2 兼容层)"
 
       - name: 📥 Caching toolchain (缓存工具链)
         id: cache-toolchain
