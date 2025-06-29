@@ -210,46 +210,29 @@ jobs:
           #include <linux/cgroup.h>
           #include <linux/fs.h>
           #include <linux/kernfs.h>
-          #include <linux/seq_file.h>
-          #include <linux/nsproxy.h>
-          #include <linux/proc_ns.h>
-          #include <linux/pid_namespace.h>
+          #include <linux/slab.h>
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
+          // 简化的文件系统类型声明
           static struct file_system_type cgroup2_fs_type;
           
+          // 简化的挂载函数
           static struct dentry *cgroup2_mount(struct file_system_type *fs_type,
                                             int flags, const char *unused_dev_name,
                                             void *data)
           {
-              struct dentry *dentry;
-              struct super_block *sb;
-              int ret;
-              
-              // 获取 cgroup2 的根 dentry
-              dentry = kernfs_mount_ns(&cgroup_root.kf_root, flags, &init_pid_ns);
-              if (IS_ERR(dentry))
-                  return dentry;
-              
-              sb = dentry->d_sb;
-              sb->s_flags |= SB_NOUSER;
-              
-              return dentry;
+              // 使用现有的cgroup挂载点
+              return kernfs_mount_ns(&cgroup_dfl_root.cgrp.kn->parent->root, flags, &init_pid_ns);
           }
           
+          // 简化的卸载函数
           static void cgroup2_kill_sb(struct super_block *sb)
           {
-              struct cgroup_sb_info *cgrp_sb = sb->s_fs_info;
-              
-              if (cgrp_sb) {
-                  cgroup_put(cgrp_sb->root_cgrp);
-                  kfree(cgrp_sb);
-              }
-              
               kill_anon_super(sb);
           }
           
+          // 文件系统类型定义
           static struct file_system_type cgroup2_fs_type = {
               .name = "cgroup2",
               .mount = cgroup2_mount,
