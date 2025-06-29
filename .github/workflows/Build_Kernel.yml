@@ -207,7 +207,6 @@ jobs:
           # 创建 kernel/cgroup/compat.c
           cat > kernel/cgroup/compat.c << 'EOF'
           #include <linux/cgroup_compat.h>
-          #include <linux/cgroup.h>
           #include <linux/fs.h>
           #include <linux/kernfs.h>
           #include <linux/slab.h>
@@ -223,13 +222,16 @@ jobs:
                                             void *data)
           {
               // 使用现有的cgroup挂载点
-              return kernfs_mount_ns(&cgroup_dfl_root.cgrp.kn->parent->root, flags, &init_pid_ns);
+              struct super_block *sb = kernfs_mount_ns(&cgroup_root.kf_root, flags, &init_pid_ns);
+              if (IS_ERR(sb))
+                  return ERR_CAST(sb);
+              return dget(sb->s_root);
           }
           
           // 简化的卸载函数
           static void cgroup2_kill_sb(struct super_block *sb)
           {
-              kill_anon_super(sb);
+              kernfs_kill_sb(sb);
           }
           
           // 文件系统类型定义
@@ -281,6 +283,12 @@ jobs:
           ROOT_KCONFIG="$KERNEL_SOURCE/Kconfig"
           if ! grep -q "source \"compat/Kconfig\"" "$ROOT_KCONFIG"; then
               echo 'source "compat/Kconfig"' >> "$ROOT_KCONFIG"
+          fi
+          
+          # 在 cgroup.h 中添加 extern 声明
+          CGROUP_HEADER="$KERNEL_SOURCE/include/linux/cgroup.h"
+          if ! grep -q "extern struct cgroup_root cgroup_root;" "$CGROUP_HEADER"; then
+              echo -e "\n/* Compatibility layer */\nextern struct cgroup_root cgroup_root;\n" >> "$CGROUP_HEADER"
           fi
           
           echo "✅ cgroup v2 compatibility layer added (已添加 cgroup v2 兼容层)"
