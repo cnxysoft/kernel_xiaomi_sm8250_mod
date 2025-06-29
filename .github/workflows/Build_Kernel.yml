@@ -193,21 +193,11 @@ jobs:
           #define _LINUX_CGROUP_COMPAT_H
           
           #include <linux/version.h>
-          #include <linux/cgroup.h>
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
-          // 4.19 缺少的结构定义
-          struct cgroup_root;
-          
-          // 4.19 缺少的函数声明
-          int compat_cgroup2_mount(struct file_system_type *fs_type, int flags,
-                                const char *unused_dev_name, void *data);
-          struct dentry *compat_cgroup2_mountpoint(struct super_block *sb);
-          void compat_cgroup2_kill_sb(struct super_block *sb);
-          
-          // 简化版cgroup2文件系统类型
-          extern struct file_system_type cgroup2_fs_type;
+          // 4.19 兼容的 cgroup2 初始化函数
+          int compat_cgroup2_init(void);
           
           #endif // KERNEL_VERSION < 5.0.0
           
@@ -217,95 +207,84 @@ jobs:
           # 创建 kernel/cgroup/compat.c
           cat > kernel/cgroup/compat.c << 'EOF'
           #include <linux/cgroup_compat.h>
+          #include <linux/cgroup.h>
           #include <linux/fs.h>
-          #include <linux/module.h>
-          #include <linux/slab.h>
-          #include <linux/mount.h>
           #include <linux/kernfs.h>
+          #include <linux/seq_file.h>
+          #include <linux/nsproxy.h>
+          #include <linux/proc_ns.h>
+          #include <linux/pid_namespace.h>
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
-          static struct dentry *compat_cgroup2_mountpoint(struct super_block *sb)
-          {
-              struct cgroup_subsys *ss;
-              struct cgroup_root *root;
-              
-              for_each_root(root) {
-                  if (root->cgrp.kn && kernfs_root(root->cgrp.kn) == sb->s_root) {
-                      return dget(root->cgrp.kn->dentry);
-                  }
-              }
-              return NULL;
-          }
+          static struct file_system_type cgroup2_fs_type;
           
-          static int compat_cgroup2_mount(struct file_system_type *fs_type, int flags,
-                                const char *unused_dev_name, void *data)
+          static struct dentry *cgroup2_mount(struct file_system_type *fs_type,
+                                            int flags, const char *unused_dev_name,
+                                            void *data)
           {
               struct dentry *dentry;
               struct super_block *sb;
               int ret;
               
-              // 创建超级块
-              sb = sget(fs_type, NULL, set_anon_super, flags, NULL);
-              if (IS_ERR(sb))
-                  return PTR_ERR(sb);
+              // 获取 cgroup2 的根 dentry
+              dentry = kernfs_mount_ns(&cgroup_root.kf_root, flags, &init_pid_ns);
+              if (IS_ERR(dentry))
+                  return dentry;
               
-              // 设置挂载点
-              dentry = compat_cgroup2_mountpoint(sb);
-              if (IS_ERR(dentry)) {
-                  ret = PTR_ERR(dentry);
-                  goto out_deactivate;
-              }
+              sb = dentry->d_sb;
+              sb->s_flags |= SB_NOUSER;
               
-              sb->s_root = dentry;
-              return 0;
-              
-          out_deactivate:
-              deactivate_locked_super(sb);
-              return ret;
+              return dentry;
           }
           
-          static void compat_cgroup2_kill_sb(struct super_block *sb)
+          static void cgroup2_kill_sb(struct super_block *sb)
           {
-              struct cgroup_subsys *ss;
-              struct cgroup_root *root;
+              struct cgroup_sb_info *cgrp_sb = sb->s_fs_info;
               
-              for_each_root(root) {
-                  if (root->cgrp.kn && kernfs_root(root->cgrp.kn) == sb->s_root) {
-                      kernfs_kill_sb(sb);
-                      return;
-                  }
+              if (cgrp_sb) {
+                  cgroup_put(cgrp_sb->root_cgrp);
+                  kfree(cgrp_sb);
               }
               
-              generic_shutdown_super(sb);
+              kill_anon_super(sb);
           }
           
-          struct file_system_type cgroup2_fs_type = {
+          static struct file_system_type cgroup2_fs_type = {
               .name = "cgroup2",
-              .mount = compat_cgroup2_mount,
-              .kill_sb = compat_cgroup2_kill_sb,
+              .mount = cgroup2_mount,
+              .kill_sb = cgroup2_kill_sb,
               .fs_flags = FS_USERNS_MOUNT,
           };
-          EXPORT_SYMBOL(cgroup2_fs_type);
+          
+          int compat_cgroup2_init(void)
+          {
+              int ret;
+              
+              // 注册文件系统
+              ret = register_filesystem(&cgroup2_fs_type);
+              if (ret) {
+                  pr_err("Failed to register cgroup2 filesystem: %d\n", ret);
+                  return ret;
+              }
+              
+              pr_info("cgroup2 compatibility layer initialized\n");
+              return 0;
+          }
           
           #endif // KERNEL_VERSION < 5.0.0
           EOF
           
           # 修改 kernel/cgroup/cgroup.c (追加兼容层初始化代码)
           cat >> kernel/cgroup/cgroup.c << 'EOF'
-          
           #include <linux/version.h>
+          #include <linux/cgroup_compat.h>
           
           #ifdef CONFIG_CGROUP_COMPAT
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           static int __init cgroup_compat_init(void)
           {
-              int ret = register_filesystem(&cgroup2_fs_type);
-              if (ret)
-                  pr_err("Failed to register compat cgroup2 filesystem\n");
-              else
-                  pr_info("Compat cgroup2 filesystem registered\n");
-              return 0;
+              return compat_cgroup2_init();
           }
           late_initcall(cgroup_compat_init);
           #endif
@@ -314,6 +293,12 @@ jobs:
           
           # 修改 kernel/cgroup/Makefile
           sed -i '/^obj-y :=/a obj-y += compat.o' kernel/cgroup/Makefile
+          
+          # 确保根 Kconfig 包含兼容层配置
+          ROOT_KCONFIG="$KERNEL_SOURCE/Kconfig"
+          if ! grep -q "source \"compat/Kconfig\"" "$ROOT_KCONFIG"; then
+              echo 'source "compat/Kconfig"' >> "$ROOT_KCONFIG"
+          fi
           
           echo "✅ cgroup v2 compatibility layer added (已添加 cgroup v2 兼容层)"
 
