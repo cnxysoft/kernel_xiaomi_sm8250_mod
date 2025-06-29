@@ -85,6 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      custom_manager: ${{ steps.set-manager.outputs.manager }}
     steps:
       - id: set-matrix
         run: |
@@ -94,6 +95,15 @@ jobs:
           fi
           DEVICES_JSON="[$(echo $DEVICES | sed 's/,/","/g' | sed 's/.*/"&"/')]"
           echo "matrix={\"device\":$DEVICES_JSON}" >> $GITHUB_OUTPUT
+      - id: set-manager
+        run: |
+          if [ -n "${{ inputs.manager_sign_size }}" ] && \
+            [ -n "${{ inputs.manager_sign_hash }}" ] && \
+            [ -n "${{ inputs.manager_package_name }}" ]; then
+            echo "manager=CUSMGR" >> $GITHUB_OUTPUT
+          else
+            echo "manager=ORGMGR" >> $GITHUB_OUTPUT
+          fi
 
   build:
     needs: prepare
@@ -112,6 +122,7 @@ jobs:
       KERNEL_SOURCE: "${{ github.workspace }}/kernel_source"
       TOOLCHAIN_DIR: "${{ github.workspace }}/toolchain"
       DEVICE: "${{ matrix.device }}"
+      CUSTOM_MANAGER: "${{ needs.prepare.outputs.custom_manager }}"
 
     steps:
       - name: 📢 Build Information (构建信息)
@@ -119,11 +130,8 @@ jobs:
           echo "设备: ${DEVICE} | 系统: ${{ inputs.compiled_system }}"
           echo "KernelSU变体: ${{ inputs.kernelsu_variant }} | KPM: ${{ inputs.kpm_enable }}"
           echo "构建类型: ${{ inputs.build_type }}"
-          if [ ! -z ${{ inputs.manager_sign_size }} ] && [ ! -z ${{ inputs.manager_sign_hash }} ] && [ ! -z ${{ inputs.manager_package_name }} ]; then
-            echo "自定义管理器 - NAME: ${{ inputs.manager_package_name }} | SIZE：${{ inputs.manager_sign_size }} | HASH: ${{ inputs.manager_sign_hash }}"
-            echo "CUSTOM_MANAGER=CUSMGR" >> $GITHUB_ENV
-          else
-            echo "CUSTOM_MANAGER=ORGMGR" >> $GITHUB_ENV
+          if [ "$CUSTOM_MANAGER" == "CUSMGR" ]; then
+            echo "自定义管理器 - NAME: ${{ inputs.manager_package_name }} | SIZE: ${{ inputs.manager_sign_size }} | HASH: ${{ inputs.manager_sign_hash }}"
           fi
 
       - name: 🚀 Maximize build space (最大化构建空间)
@@ -634,7 +642,7 @@ jobs:
           path: ${{ github.workspace }}/ak3_out/*.zip
 
   release:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -684,7 +692,7 @@ jobs:
           - **Target Device:** ${{ env.TARGET_DEVICES }}
           - **Compiled System:** ${{ inputs.compiled_system }}
           - **KernelSU Variant:** ${{ inputs.kernelsu_variant }}
-          - **KernelSU Manager:** ${{ env.CUSTOM_MANAGER }} 
+          - **KernelSU Manager:** ${{ needs.prepare.outputs.custom_manager }}
           - **KPM Support:** ${{ inputs.kpm_enable }}
           - **Build Type:** ${{ inputs.build_type }}
           - **Build Date:** ${{ env.RELEASE_DATE }}
@@ -694,7 +702,7 @@ jobs:
           - **目标机型:** ${{ env.TARGET_DEVICES }}
           - **适用系统:** ${{ inputs.compiled_system }}
           - **KernelSU变体:** ${{ inputs.kernelsu_variant }}
-          - **KernelSU管理器:** ${{ env.CUSTOM_MANAGER }} 
+          - **KernelSU管理器:** ${{ needs.prepare.outputs.custom_manager }}
           - **KPM支持:** ${{ inputs.kpm_enable }}
           - **构建类型:** ${{ inputs.build_type }}
           - **构建日期:** ${{ env.RELEASE_DATE }}
