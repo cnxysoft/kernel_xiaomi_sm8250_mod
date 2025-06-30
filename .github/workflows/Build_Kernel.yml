@@ -288,7 +288,7 @@ jobs:
         run: |
           cd "$KERNEL_SOURCE"
           
-          # 修改 cgroup.c
+          # 修改 cgroup.c - 添加内存控制器强制启用代码
           CGROUP_FILE="kernel/cgroup/cgroup.c"
           INSERT_POINT=$(grep -n "static int __init cgroup_init(void)" $CGROUP_FILE | cut -d: -f1)
           INSERT_POINT=$((INSERT_POINT+1))
@@ -297,36 +297,44 @@ jobs:
           // 强制启用内存控制器\\
           pr_info(\"Forcing memory controller enable\\n\");\\
           {\\
-              char buffer[] = \"+memory\";\\
-              struct cgroup *cgrp;\\
               struct cgroup_subsys *ss;\\
               \\
               // 获取根cgroup\\
-              cgrp = \&cgrp_dfl_root.cgrp;\\
+              struct cgroup *cgrp = \&cgrp_dfl_root.cgrp;\\
               \\
               // 找到内存控制器\\
-              ss = cgroup_subsys[memory_cgrp_id];\\
+              for (int i = 0; i < CGROUP_SUBSYS_COUNT; i++) {\\
+                  if (cgroup_subsys[i] && strcmp(cgroup_subsys[i]->name, \"memory\") == 0) {\\
+                      ss = cgroup_subsys[i];\\
+                      break;\\
+                  }\\
+              }\\
               \\
               // 启用控制器\\
-              cgroup_apply_control_enable(cgrp, ss);\\
+              if (ss) {\\
+                  cgroup_apply_control_enable(cgrp, ss);\\
+                  pr_info(\"Memory controller enabled\\n\");\\
+              } else {\\
+                  pr_err(\"Failed to find memory controller\\n\");\\
+              }\\
           }\\
           " $CGROUP_FILE
           
-          # 修改 cgroup-defs.h
-          echo -e "\n/* Exported memory controller ID */\nextern int memory_cgrp_id;\n" >> include/linux/cgroup-defs.h
-          
-          # 修改 memcontrol.c
+          # 修改 memcontrol.c - 添加必要的导出
           MEMCONTROL_FILE="mm/memcontrol.c"
+          
+          # 在文件顶部添加cgroup.h包含
           sed -i "1i\\
-          int memory_cgrp_id __read_mostly;\\
+          #include <linux/cgroup.h>\\
           " $MEMCONTROL_FILE
           
-          # 在mem_cgroup_init函数中设置ID
+          # 在mem_cgroup_init函数中确保内存控制器ID设置
           INSERT_POINT=$(grep -n "int __init mem_cgroup_init(void)" $MEMCONTROL_FILE | cut -d: -f1)
           INSERT_POINT=$((INSERT_POINT+1))
           
           sed -i "${INSERT_POINT}i\\
-          memory_cgrp_id = mem_cgroup_subsys.id;\\
+          // 确保内存控制器ID设置\\
+          mem_cgroup_subsys.id = memory_cgrp_id;\\
           " $MEMCONTROL_FILE
           
           echo "✅ Memory controller initialization fixed (已修复内存控制器初始化)"
