@@ -288,40 +288,18 @@ jobs:
         run: |
           cd "$KERNEL_SOURCE"
           
-          # 修改 cgroup.c - 添加内存控制器强制启用代码
+          # 修改 cgroup.c
           CGROUP_FILE="kernel/cgroup/cgroup.c"
           
-          # 查找 cgroup_init 函数开始位置
-          INIT_START=$(grep -n "static int __init cgroup_init(void)" $CGROUP_FILE | cut -d: -f1)
-          INIT_START=$((INIT_START+1))
+          # 在 cgroup_init 函数开头添加
+          sed -i '/static int __init cgroup_init(void)/a {\
+          \t// 强制启用内存控制器\
+          \tcgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, \&memory_cgrp_subsys);\
+          \tpr_info("Memory controller enabled by compatibility layer\\\n");\
+          }' $CGROUP_FILE
           
-          # 插入强制启用内存控制器的代码
-          sed -i "${INIT_START}i\\
-          // 强制启用内存控制器\\
-          {\\
-              struct cgroup_subsys *ss = NULL;\\
-              int i;\\
-              \\
-              // 查找内存控制器子系统\\
-              for (i = 0; i < CGROUP_SUBSYS_COUNT; i++) {\\
-                  if (cgroup_subsys[i] \&\& !strcmp(cgroup_subsys[i]->name, \\"memory\\")) {\\
-                      ss = cgroup_subsys[i];\\
-                      break;\\
-                  }\\
-              }\\
-              \\
-              // 启用控制器\\
-              if (ss) {\\
-                  cgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, ss);\\
-                  pr_info(\\"Memory controller enabled by compatibility layer\\\n\\");\\
-              } else {\\
-                  pr_err(\\"Failed to find memory controller subsystem\\\n\\");\\
-              }\\
-          }\\
-          " $CGROUP_FILE
-          
-          # 添加必要的头文件包含
-          sed -i "1i #include <linux/string.h>" $CGROUP_FILE
+          # 添加头文件
+          sed -i '1i #include <linux/memcontrol.h>' $CGROUP_FILE
 
           echo "✅ Memory controller initialization fixed (已修复内存控制器初始化)"
 
