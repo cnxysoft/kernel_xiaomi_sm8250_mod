@@ -290,21 +290,21 @@ jobs:
           
           # 修改 cgroup.c - 添加内存控制器强制启用代码
           CGROUP_FILE="kernel/cgroup/cgroup.c"
-          INSERT_POINT=$(grep -n "static int __init cgroup_init(void)" $CGROUP_FILE | cut -d: -f1)
-          INSERT_POINT=$((INSERT_POINT+1))
           
-          sed -i "${INSERT_POINT}i\\
+          # 查找 cgroup_init 函数开始位置
+          INIT_START=$(grep -n "static int __init cgroup_init(void)" $CGROUP_FILE | cut -d: -f1)
+          INIT_START=$((INIT_START+1))
+          
+          # 插入强制启用内存控制器的代码
+          sed -i "${INIT_START}i\\
           // 强制启用内存控制器\\
-          pr_info(\"Forcing memory controller enable\\n\");\\
           {\\
-              struct cgroup_subsys *ss;\\
+              struct cgroup_subsys *ss = NULL;\\
+              int i;\\
               \\
-              // 获取根cgroup\\
-              struct cgroup *cgrp = \&cgrp_dfl_root.cgrp;\\
-              \\
-              // 找到内存控制器\\
-              for (int i = 0; i < CGROUP_SUBSYS_COUNT; i++) {\\
-                  if (cgroup_subsys[i] && strcmp(cgroup_subsys[i]->name, \"memory\") == 0) {\\
+              // 查找内存控制器子系统\\
+              for (i = 0; i < CGROUP_SUBSYS_COUNT; i++) {\\
+                  if (cgroup_subsys[i] \&\& !strcmp(cgroup_subsys[i]->name, \\"memory\\")) {\\
                       ss = cgroup_subsys[i];\\
                       break;\\
                   }\\
@@ -312,31 +312,17 @@ jobs:
               \\
               // 启用控制器\\
               if (ss) {\\
-                  cgroup_apply_control_enable(cgrp, ss);\\
-                  pr_info(\"Memory controller enabled\\n\");\\
+                  cgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, ss);\\
+                  pr_info(\\"Memory controller enabled by compatibility layer\\\n\\");\\
               } else {\\
-                  pr_err(\"Failed to find memory controller\\n\");\\
+                  pr_err(\\"Failed to find memory controller subsystem\\\n\\");\\
               }\\
           }\\
           " $CGROUP_FILE
           
-          # 修改 memcontrol.c - 添加必要的导出
-          MEMCONTROL_FILE="mm/memcontrol.c"
-          
-          # 在文件顶部添加cgroup.h包含
-          sed -i "1i\\
-          #include <linux/cgroup.h>\\
-          " $MEMCONTROL_FILE
-          
-          # 在mem_cgroup_init函数中确保内存控制器ID设置
-          INSERT_POINT=$(grep -n "int __init mem_cgroup_init(void)" $MEMCONTROL_FILE | cut -d: -f1)
-          INSERT_POINT=$((INSERT_POINT+1))
-          
-          sed -i "${INSERT_POINT}i\\
-          // 确保内存控制器ID设置\\
-          mem_cgroup_subsys.id = memory_cgrp_id;\\
-          " $MEMCONTROL_FILE
-          
+          # 添加必要的头文件包含
+          sed -i "1i #include <linux/string.h>" $CGROUP_FILE
+
           echo "✅ Memory controller initialization fixed (已修复内存控制器初始化)"
 
       - name: 📥 Caching toolchain (缓存工具链)
