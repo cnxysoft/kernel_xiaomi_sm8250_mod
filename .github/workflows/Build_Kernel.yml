@@ -284,6 +284,53 @@ jobs:
           
           echo "✅ cgroup v2 compatibility layer added (已添加 cgroup v2 兼容层)"
 
+      - name: 🛠️ Fix memory controller initialization (修复内存控制器初始化)
+        run: |
+          cd "$KERNEL_SOURCE"
+          
+          # 修改 cgroup.c
+          CGROUP_FILE="kernel/cgroup/cgroup.c"
+          INSERT_POINT=$(grep -n "static int __init cgroup_init(void)" $CGROUP_FILE | cut -d: -f1)
+          INSERT_POINT=$((INSERT_POINT+1))
+          
+          sed -i "${INSERT_POINT}i\\
+          // 强制启用内存控制器\\
+          pr_info(\"Forcing memory controller enable\\n\");\\
+          {\\
+              char buffer[] = \"+memory\";\\
+              struct cgroup *cgrp;\\
+              struct cgroup_subsys *ss;\\
+              \\
+              // 获取根cgroup\\
+              cgrp = \&cgrp_dfl_root.cgrp;\\
+              \\
+              // 找到内存控制器\\
+              ss = cgroup_subsys[memory_cgrp_id];\\
+              \\
+              // 启用控制器\\
+              cgroup_apply_control_enable(cgrp, ss);\\
+          }\\
+          " $CGROUP_FILE
+          
+          # 修改 cgroup-defs.h
+          echo -e "\n/* Exported memory controller ID */\nextern int memory_cgrp_id;\n" >> include/linux/cgroup-defs.h
+          
+          # 修改 memcontrol.c
+          MEMCONTROL_FILE="mm/memcontrol.c"
+          sed -i "1i\\
+          int memory_cgrp_id __read_mostly;\\
+          " $MEMCONTROL_FILE
+          
+          # 在mem_cgroup_init函数中设置ID
+          INSERT_POINT=$(grep -n "int __init mem_cgroup_init(void)" $MEMCONTROL_FILE | cut -d: -f1)
+          INSERT_POINT=$((INSERT_POINT+1))
+          
+          sed -i "${INSERT_POINT}i\\
+          memory_cgrp_id = mem_cgroup_subsys.id;\\
+          " $MEMCONTROL_FILE
+          
+          echo "✅ Memory controller initialization fixed (已修复内存控制器初始化)"
+
       - name: 📥 Caching toolchain (缓存工具链)
         id: cache-toolchain
         uses: actions/cache@v4
