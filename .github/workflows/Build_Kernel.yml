@@ -210,6 +210,9 @@ jobs:
           // 声明 cgrp_dfl_root 变量
           extern struct cgroup_root cgrp_dfl_root;
           
+          // 声明 mem_cgroup_subsys 变量
+          extern struct cgroup_subsys mem_cgroup_subsys;
+          
           #endif // KERNEL_VERSION < 5.0.0
           
           #endif // _LINUX_CGROUP_COMPAT_H
@@ -325,11 +328,10 @@ jobs:
               echo "EXPORT_SYMBOL_GPL(cgrp_dfl_root);" >> kernel/cgroup/cgroup.c
           fi
           
-          # 添加内存控制器子系统声明
-          MEMCG_HEADER="include/linux/memcontrol.h"
-          if ! grep -q "extern struct cgroup_subsys mem_cgroup_subsys" $MEMCG_HEADER; then
-              echo -e "\n/* Compatibility subsystem declaration */" >> $MEMCG_HEADER
-              echo "extern struct cgroup_subsys mem_cgroup_subsys;" >> $MEMCG_HEADER
+          # 导出 mem_cgroup_subsys 变量
+          MEMCG_FILE="mm/memcontrol.c"
+          if ! grep -q "EXPORT_SYMBOL_GPL(mem_cgroup_subsys)" $MEMCG_FILE; then
+              echo "EXPORT_SYMBOL_GPL(mem_cgroup_subsys);" >> $MEMCG_FILE
           fi
           
           # 修改 kernel/cgroup/Makefile
