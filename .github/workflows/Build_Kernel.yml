@@ -193,8 +193,8 @@ jobs:
           #define _LINUX_CGROUP_COMPAT_H
           
           #include <linux/version.h>
-          #include <linux/cgroup-defs.h>  // 包含必要的结构体定义
-          #include <linux/cgroup.h>       // 包含必要的结构体定义
+          #include <linux/cgroup-defs.h>
+          #include <linux/cgroup.h>
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
@@ -263,8 +263,20 @@ jobs:
                   return;
               }
               
-              // 启用内存控制器
-              compat_cgroup_apply_control_enable(&cgrp_dfl_root.cgrp, &mem_cgroup_subsys);
+              // 关键修复：正确启用内存控制器
+              // 1. 设置内存控制器的根目录
+              cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = &cgrp_dfl_root.cgrp;
+              
+              // 2. 应用控制器启用
+              int ret = compat_cgroup_apply_control_enable(&cgrp_dfl_root.cgrp, &mem_cgroup_subsys);
+              if (ret) {
+                  pr_err("Failed to enable memory controller: %d\n", ret);
+                  return;
+              }
+              
+              // 3. 添加控制器到根目录
+              cgroup_add_dfl_cftypes(&cgrp_dfl_root, mem_cgroup_subsys.dfl_cftypes);
+              
               pr_info("Memory controller enabled by compatibility layer\n");
           }
           
@@ -336,7 +348,7 @@ jobs:
               sed -i '1i #include <linux/cgroup.h>' "$MEMCG_FILE"
           fi
           
-          # 2. 确保 mem_cgroup_subsys 被导出（修复函数签名问题）
+          # 2. 确保 mem_cgroup_subsys 被导出（使用正确的函数签名）
           if grep -q "struct cgroup_subsys mem_cgroup_subsys" "$MEMCG_FILE"; then
               # 如果已经存在定义，直接在其后添加导出
               sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' "$MEMCG_FILE"
@@ -352,9 +364,10 @@ jobs:
               .css_free = mem_cgroup_css_free,
               .can_attach = mem_cgroup_can_attach,
               .cancel_attach = mem_cgroup_cancel_attach,
-              .attach = NULL,  // 使用 NULL 代替，避免签名不匹配
-              .bind = NULL,     // 使用 NULL 代替，避免签名不匹配
+              .attach = mem_cgroup_move_task,
+              .bind = mem_cgroup_bind,
               .legacy_cftypes = mem_cgroup_legacy_files,
+              .dfl_cftypes = mem_cgroup_legacy_files,  // 关键：使用相同的文件类型
               .early_init = 0,
           };
           EXPORT_SYMBOL_GPL(mem_cgroup_subsys);
