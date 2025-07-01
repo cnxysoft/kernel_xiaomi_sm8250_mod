@@ -328,16 +328,18 @@ jobs:
               echo "EXPORT_SYMBOL_GPL(cgrp_dfl_root);" >> kernel/cgroup/cgroup.c
           fi
           
-          # 在 memcontrol.c 中添加 mem_cgroup_subsys 声明和导出
+          # 在 memcontrol.c 中确保 mem_cgroup_subsys 正确导出
           MEMCG_FILE="mm/memcontrol.c"
           
-          # 1. 在文件开头添加声明
-          if ! grep -q "struct cgroup_subsys mem_cgroup_subsys" $MEMCG_FILE; then
-              sed -i '1i extern struct cgroup_subsys mem_cgroup_subsys;' $MEMCG_FILE
-          fi
+          # 1. 添加必要的头文件
+          sed -i '1i #include <linux/cgroup.h>' $MEMCG_FILE
           
-          # 2. 在文件末尾添加定义
-          if ! grep -q "struct cgroup_subsys mem_cgroup_subsys" $MEMCG_FILE; then
+          # 2. 确保 mem_cgroup_subsys 被导出
+          if grep -q "struct cgroup_subsys mem_cgroup_subsys" $MEMCG_FILE; then
+              # 如果已经存在定义，直接在其后添加导出
+              sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' $MEMCG_FILE
+          else
+              # 否则在文件末尾添加完整的定义和导出
               cat >> $MEMCG_FILE << 'EOF'
               
           /* Compatibility definition for mem_cgroup_subsys */
