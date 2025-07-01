@@ -299,8 +299,8 @@ jobs:
           CGROUP_FILE="kernel/cgroup/cgroup.c"
           
           # 移除之前添加的代码
-          sed -i '/\/\/ 强制启用所有控制器/,/^\tpr_info("All controllers enabled by compatibility layer\\n");/d' $CGROUP_FILE
-          sed -i '/#include <linux\/cgroup_subsys.h>/d' $CGROUP_FILE
+          sed -i '/\/\/ 强制启用内存控制器/,/^\tpr_info("Memory controller enabled by compatibility layer\\n");/d' $CGROUP_FILE
+          sed -i '/#include <linux\/memcontrol.h>/d' $CGROUP_FILE
           
           # 3. 在 cgroup_init 函数中正确调用 cgroup_apply_control_enable
           # 找到 cgroup_init 函数的开头
@@ -321,33 +321,37 @@ jobs:
           # 移除 cgroup.c 中可能导致冲突的 pr_fmt 定义
           sed -i '/#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt/d' $CGROUP_FILE
           
-          # 6. 移除头文件中的冲突声明
-          CGROUP_HEADER="include/linux/cgroup.h"
-          sed -i '/\/\* Compatibility function declaration \*\//d' $CGROUP_HEADER
-          sed -i '/int cgroup_apply_control_enable(struct cgroup \*cgrp, struct cgroup_subsys \*ss);/d' $CGROUP_HEADER
-          
-          # 7. 修复函数签名
+          # 6. 修复函数签名
           # 查找并修复 cgroup_apply_control_enable 的函数签名
           sed -i 's/static int cgroup_apply_control_enable(struct cgroup \*cgrp)/static int cgroup_apply_control_enable(struct cgroup *cgrp, struct cgroup_subsys *ss)/' $CGROUP_FILE
           
-          # 8. 修复函数调用点
+          # 7. 修复函数调用点
           # 在 cgroup.c 中找到所有调用点并添加第二个参数
           sed -i 's/cgroup_apply_control_enable(cgrp)/cgroup_apply_control_enable(cgrp, NULL)/g' $CGROUP_FILE
           
-          # 9. 在 memcontrol.h 中添加子系统声明
+          # 8. 在 memcontrol.h 中添加子系统声明
           MEMCG_HEADER="include/linux/memcontrol.h"
           if ! grep -q "extern struct cgroup_subsys mem_cgroup_subsys" $MEMCG_HEADER; then
               echo -e "\n/* Compatibility subsystem declaration */" >> $MEMCG_HEADER
               echo "extern struct cgroup_subsys mem_cgroup_subsys;" >> $MEMCG_HEADER
           fi
           
-          # 10. 修复头文件包含顺序问题
+          # 9. 修复头文件包含顺序问题
           # 在 cgroup.c 中添加基本类型定义头文件
           sed -i '1i #include <linux/types.h>' $CGROUP_FILE
           sed -i '1i #include <uapi/linux/types.h>' $CGROUP_FILE
           
-          # 11. 修复变量名冲突
-          sed -i 's/struct cgroup_subsys \*ss;/struct cgroup_subsys *tmp_ss;/g' $CGROUP_FILE
+          # 10. 修复宏定义问题 - 关键修复
+          # 确保 cgroup_subsys.h 在正确位置被包含
+          # 首先移除所有可能导致冲突的包含
+          sed -i '/#include <linux\/cgroup_subsys.h>/d' $CGROUP_FILE
+          
+          # 然后在 cgroup.h 包含之后添加
+          sed -i '/#include <linux\/cgroup.h>/a #include <linux/cgroup_subsys.h>' $CGROUP_FILE
+          
+          # 11. 修复变量名冲突 - 确保宏能正确定义 ss
+          # 移除之前对 ss 的重命名
+          sed -i 's/struct cgroup_subsys \*tmp_ss;/struct cgroup_subsys *ss;/g' $CGROUP_FILE
           
           echo "✅ Memory controller initialization errors fixed (已修复内存控制器初始化错误)"
 
