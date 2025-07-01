@@ -299,37 +299,44 @@ jobs:
           CGROUP_FILE="kernel/cgroup/cgroup.c"
           
           # 移除之前添加的代码
-          sed -i '/\/\/ 强制启用所有可用控制器/,/^\tpr_info("All available controllers enabled by compatibility layer\\n");/d' $CGROUP_FILE
-          sed -i '/#include <linux\/cgroup-defs.h>/d' $CGROUP_FILE
-          sed -i '/#include <linux\/cgroup.h>/d' $CGROUP_FILE
+          sed -i '/\/\/ 强制启用内存控制器/,/^\tpr_info("Memory controller enabled by compatibility layer\\n");/d' $CGROUP_FILE
+          sed -i '/#include <linux\/memcontrol.h>/d' $CGROUP_FILE
           
           # 3. 在 cgroup_init 函数中正确调用 cgroup_apply_control_enable
           # 找到 cgroup_init 函数的开头
           sed -i '/static int __init cgroup_init(void)/a \
-          \t// 强制启用内存控制器\
+          \t// 强制启用所有控制器\
           \t{\
-          \t\tstruct cgroup_subsys *ss = \&mem_cgroup_subsys;\
-          \t\tif (ss->id >= 0) {\
-          \t\t\tcgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, ss);\
-          \t\t\tpr_info("Memory controller enabled by compatibility layer\\n");\
+          \t\tstruct cgroup_subsys *ss;\
+          \t\tfor_each_subsys(ss) {\
+          \t\t\tif (ss->id >= 0) {\
+          \t\t\t\tcgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, ss);\
+          \t\t\t}\
           \t\t}\
+          \t\tpr_info("All controllers enabled by compatibility layer\\n");\
           \t}' $CGROUP_FILE
           
           # 4. 添加必要的头文件
-          sed -i '1i #include <linux/memcontrol.h>' $CGROUP_FILE
+          sed -i '1i #include <linux/cgroup_subsys.h>' $CGROUP_FILE
           
           # 5. 修复 pr_fmt 重定义问题
           # 移除 cgroup.c 中可能导致冲突的 pr_fmt 定义
           sed -i '/#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt/d' $CGROUP_FILE
           
-          # 6. 在 cgroup.h 中添加函数声明
+          # 6. 移除头文件中的冲突声明
           CGROUP_HEADER="include/linux/cgroup.h"
-          if ! grep -q "int cgroup_apply_control_enable" $CGROUP_HEADER; then
-              echo -e "\n/* Compatibility function declaration */" >> $CGROUP_HEADER
-              echo "int cgroup_apply_control_enable(struct cgroup *cgrp, struct cgroup_subsys *ss);" >> $CGROUP_HEADER
-          fi
+          sed -i '/\/\* Compatibility function declaration \*\//d' $CGROUP_HEADER
+          sed -i '/int cgroup_apply_control_enable(struct cgroup \*cgrp, struct cgroup_subsys \*ss);/d' $CGROUP_HEADER
           
-          # 7. 在 memcontrol.h 中添加子系统声明
+          # 7. 修复函数签名
+          # 查找并修复 cgroup_apply_control_enable 的函数签名
+          sed -i 's/static int cgroup_apply_control_enable(struct cgroup \*cgrp)/static int cgroup_apply_control_enable(struct cgroup *cgrp, struct cgroup_subsys *ss)/' $CGROUP_FILE
+          
+          # 8. 修复函数调用点
+          # 在 cgroup.c 中找到所有调用点并添加第二个参数
+          sed -i 's/cgroup_apply_control_enable(cgrp)/cgroup_apply_control_enable(cgrp, NULL)/g' $CGROUP_FILE
+          
+          # 9. 在 memcontrol.h 中添加子系统声明
           MEMCG_HEADER="include/linux/memcontrol.h"
           if ! grep -q "extern struct cgroup_subsys mem_cgroup_subsys" $MEMCG_HEADER; then
               echo -e "\n/* Compatibility subsystem declaration */" >> $MEMCG_HEADER
