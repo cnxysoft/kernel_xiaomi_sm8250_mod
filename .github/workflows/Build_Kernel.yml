@@ -193,6 +193,8 @@ jobs:
           #define _LINUX_CGROUP_COMPAT_H
           
           #include <linux/version.h>
+          #include <linux/cgroup-defs.h>  // 包含必要的结构体定义
+          #include <linux/cgroup.h>       // 包含必要的结构体定义
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
@@ -219,7 +221,6 @@ jobs:
           #include <linux/fs.h>
           #include <linux/kernfs.h>
           #include <linux/slab.h>
-          #include <linux/cgroup.h>
           #include <linux/memcontrol.h>
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
