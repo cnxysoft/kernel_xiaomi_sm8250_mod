@@ -203,7 +203,7 @@ jobs:
           void compat_enable_memory_controller(void);
           
           // 声明 cgroup_apply_control_enable 函数
-          int cgroup_apply_control_enable(struct cgroup *cgrp, struct cgroup_subsys *ss);
+          int compat_cgroup_apply_control_enable(struct cgroup *cgrp, struct cgroup_subsys *ss);
           
           // 声明 cgrp_dfl_root 变量
           extern struct cgroup_root cgrp_dfl_root;
@@ -260,7 +260,7 @@ jobs:
               }
               
               // 启用内存控制器
-              cgroup_apply_control_enable(&cgrp_dfl_root.cgrp, &mem_cgroup_subsys);
+              compat_cgroup_apply_control_enable(&cgrp_dfl_root.cgrp, &mem_cgroup_subsys);
               pr_info("Memory controller enabled by compatibility layer\n");
           }
           
@@ -301,13 +301,28 @@ jobs:
           #endif
           EOF
           
-          # 导出 cgroup_apply_control_enable 函数
-          sed -i 's/static int cgroup_apply_control_enable/int cgroup_apply_control_enable/' kernel/cgroup/cgroup.c
-          echo "EXPORT_SYMBOL_GPL(cgroup_apply_control_enable);" >> kernel/cgroup/cgroup.c
+          # 创建兼容版本的 cgroup_apply_control_enable 函数
+          # 在 cgroup.c 文件末尾添加
+          cat >> kernel/cgroup/cgroup.c << 'EOF'
           
-          # 导出 cgrp_dfl_root 变量
-          sed -i 's/static struct cgroup_root cgrp_dfl_root/struct cgroup_root cgrp_dfl_root/' kernel/cgroup/cgroup.c
-          echo "EXPORT_SYMBOL_GPL(cgrp_dfl_root);" >> kernel/cgroup/cgroup.c
+          #ifdef CONFIG_CGROUP_COMPAT
+          #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
+          // 兼容版本的 cgroup_apply_control_enable 函数
+          int compat_cgroup_apply_control_enable(struct cgroup *cgrp, struct cgroup_subsys *ss)
+          {
+              return cgroup_apply_control_enable(cgrp);
+          }
+          EXPORT_SYMBOL_GPL(compat_cgroup_apply_control_enable);
+          #endif
+          #endif
+          EOF
+          
+          # 导出 cgrp_dfl_root 变量（只做一次）
+          # 检查是否已经导出，如果没有再导出
+          if ! grep -q "EXPORT_SYMBOL_GPL(cgrp_dfl_root)" kernel/cgroup/cgroup.c; then
+              sed -i 's/static struct cgroup_root cgrp_dfl_root/struct cgroup_root cgrp_dfl_root/' kernel/cgroup/cgroup.c
+              echo "EXPORT_SYMBOL_GPL(cgrp_dfl_root);" >> kernel/cgroup/cgroup.c
+          fi
           
           # 添加内存控制器子系统声明
           MEMCG_HEADER="include/linux/memcontrol.h"
