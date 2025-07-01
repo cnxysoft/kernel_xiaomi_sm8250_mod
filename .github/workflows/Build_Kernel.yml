@@ -328,10 +328,34 @@ jobs:
               echo "EXPORT_SYMBOL_GPL(cgrp_dfl_root);" >> kernel/cgroup/cgroup.c
           fi
           
-          # 导出 mem_cgroup_subsys 变量
+          # 在 memcontrol.c 中添加 mem_cgroup_subsys 声明和导出
           MEMCG_FILE="mm/memcontrol.c"
-          if ! grep -q "EXPORT_SYMBOL_GPL(mem_cgroup_subsys)" $MEMCG_FILE; then
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_subsys);" >> $MEMCG_FILE
+          
+          # 1. 在文件开头添加声明
+          if ! grep -q "struct cgroup_subsys mem_cgroup_subsys" $MEMCG_FILE; then
+              sed -i '1i extern struct cgroup_subsys mem_cgroup_subsys;' $MEMCG_FILE
+          fi
+          
+          # 2. 在文件末尾添加定义
+          if ! grep -q "struct cgroup_subsys mem_cgroup_subsys" $MEMCG_FILE; then
+              cat >> $MEMCG_FILE << 'EOF'
+              
+          /* Compatibility definition for mem_cgroup_subsys */
+          struct cgroup_subsys mem_cgroup_subsys = {
+              .css_alloc = mem_cgroup_css_alloc,
+              .css_online = mem_cgroup_css_online,
+              .css_offline = mem_cgroup_css_offline,
+              .css_free = mem_cgroup_css_free,
+              .can_attach = mem_cgroup_can_attach,
+              .cancel_attach = mem_cgroup_cancel_attach,
+              .attach = mem_cgroup_move_task,
+              .bind = mem_cgroup_bind,
+              .dfl_cftypes = mem_files,
+              .legacy_cftypes = mem_cgroup_legacy_files,
+              .early_init = 0,
+          };
+          EXPORT_SYMBOL_GPL(mem_cgroup_subsys);
+          EOF
           fi
           
           # 修改 kernel/cgroup/Makefile
