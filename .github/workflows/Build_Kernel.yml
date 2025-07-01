@@ -284,24 +284,28 @@ jobs:
           
           echo "✅ cgroup v2 compatibility layer added (已添加 cgroup v2 兼容层)"
 
-      - name: 🛠️ Fix memory controller initialization (修复内存控制器初始化)
+      - name: 🛠️ Directly initialize memory controller (直接初始化内存控制器)
         run: |
           cd "$KERNEL_SOURCE"
           
-          # 修改 cgroup.c
-          CGROUP_FILE="kernel/cgroup/cgroup.c"
+          # 修改 memcontrol.c
+          MEMCG_FILE="mm/memcontrol.c"
           
-          # 在 cgroup_init 函数开头添加
-          sed -i '/static int __init cgroup_init(void)/a {\
-          \t// 强制启用所有可用控制器\
-          \tcgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, NULL);\
-          \tpr_info("All available controllers enabled by compatibility layer\\n");\
-          }' $CGROUP_FILE
+          # 在 mem_cgroup_init 函数末尾添加
+          sed -i '/^out:/a \
+          \t// 强制启用内存控制器\
+          \t{\
+          \t\tstruct cgroup_subsys *ss = \&mem_cgroup_subsys;\
+          \t\tif (ss->id >= 0) {\
+          \t\t\tcgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, ss);\
+          \t\t\tpr_info("Memory controller directly enabled\\n");\
+          \t\t}\
+          \t}' $MEMCG_FILE
           
           # 添加头文件
-          sed -i '1i #include <linux/cgroup-defs.h>' $CGROUP_FILE
+          sed -i '1i #include <linux/cgroup.h>' $MEMCG_FILE
           
-          # 确保 cgroup_apply_control_enable 函数可用
+          # 确保 cgroup_apply_control_enable 可用
           sed -i 's/static void cgroup_apply_control_enable/void cgroup_apply_control_enable/' kernel/cgroup/cgroup.c
           
           echo "✅ Memory controller initialization fixed (已修复内存控制器初始化)"
