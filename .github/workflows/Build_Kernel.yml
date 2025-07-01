@@ -341,17 +341,24 @@ jobs:
           sed -i '1i #include <linux/types.h>' $CGROUP_FILE
           sed -i '1i #include <uapi/linux/types.h>' $CGROUP_FILE
           
-          # 10. 修复宏定义问题 - 关键修复
+          # 10. 修复宏定义问题
           # 确保 cgroup_subsys.h 在正确位置被包含
-          # 首先移除所有可能导致冲突的包含
           sed -i '/#include <linux\/cgroup_subsys.h>/d' $CGROUP_FILE
-          
-          # 然后在 cgroup.h 包含之后添加
           sed -i '/#include <linux\/cgroup.h>/a #include <linux/cgroup_subsys.h>' $CGROUP_FILE
           
           # 11. 修复变量名冲突 - 确保宏能正确定义 ss
-          # 移除之前对 ss 的重命名
-          sed -i 's/struct cgroup_subsys \*tmp_ss;/struct cgroup_subsys *ss;/g' $CGROUP_FILE
+          sed -i 's/struct cgroup_subsys \*ss;/struct cgroup_subsys *tmp_ss;/g' $CGROUP_FILE
+          
+          # 12. 修复函数内部的变量名冲突 - 关键修复
+          # 重命名函数参数 ss 为 ss_arg
+          sed -i 's/static int cgroup_apply_control_enable(struct cgroup \*cgrp, struct cgroup_subsys \*ss)/static int cgroup_apply_control_enable(struct cgroup *cgrp, struct cgroup_subsys *ss_arg)/' $CGROUP_FILE
+          
+          # 13. 修复函数内部的变量声明
+          sed -i 's/struct cgroup_subsys \*ss;/struct cgroup_subsys *tmp_ss;/g' $CGROUP_FILE
+          
+          # 14. 修复函数内部对参数的引用
+          sed -i 's/ss->/ss_arg->/g' $CGROUP_FILE
+          sed -i 's/ss)/ss_arg)/g' $CGROUP_FILE
           
           echo "✅ Memory controller initialization errors fixed (已修复内存控制器初始化错误)"
 
