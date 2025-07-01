@@ -332,14 +332,16 @@ jobs:
           MEMCG_FILE="mm/memcontrol.c"
           
           # 1. 添加必要的头文件
-          sed -i '1i #include <linux/cgroup.h>' $MEMCG_FILE
+          if ! grep -q "#include <linux/cgroup.h>" "$MEMCG_FILE"; then
+              sed -i '1i #include <linux/cgroup.h>' "$MEMCG_FILE"
+          fi
           
-          # 2. 确保 mem_cgroup_subsys 被导出
-          if grep -q "struct cgroup_subsys mem_cgroup_subsys" $MEMCG_FILE; then
+          # 2. 确保 mem_cgroup_subsys 被导出（修复 mem_files 问题）
+          if grep -q "struct cgroup_subsys mem_cgroup_subsys" "$MEMCG_FILE"; then
               # 如果已经存在定义，直接在其后添加导出
-              sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' $MEMCG_FILE
+              sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' "$MEMCG_FILE"
           else
-              # 否则在文件末尾添加完整的定义和导出
+              # 否则在文件末尾添加兼容定义（不使用 mem_files）
               cat >> $MEMCG_FILE << 'EOF'
               
           /* Compatibility definition for mem_cgroup_subsys */
@@ -352,8 +354,7 @@ jobs:
               .cancel_attach = mem_cgroup_cancel_attach,
               .attach = mem_cgroup_move_task,
               .bind = mem_cgroup_bind,
-              .dfl_cftypes = mem_files,
-              .legacy_cftypes = mem_cgroup_legacy_files,
+              .legacy_cftypes = mem_cgroup_legacy_files,  // 使用 legacy_cftypes 替代 mem_files
               .early_init = 0,
           };
           EXPORT_SYMBOL_GPL(mem_cgroup_subsys);
