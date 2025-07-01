@@ -202,6 +202,12 @@ jobs:
           // 内存控制器启用函数
           void compat_enable_memory_controller(void);
           
+          // 声明 cgroup_apply_control_enable 函数
+          int cgroup_apply_control_enable(struct cgroup *cgrp, struct cgroup_subsys *ss);
+          
+          // 声明 cgrp_dfl_root 变量
+          extern struct cgroup_root cgrp_dfl_root;
+          
           #endif // KERNEL_VERSION < 5.0.0
           
           #endif // _LINUX_CGROUP_COMPAT_H
@@ -298,6 +304,10 @@ jobs:
           # 导出 cgroup_apply_control_enable 函数
           sed -i 's/static int cgroup_apply_control_enable/int cgroup_apply_control_enable/' kernel/cgroup/cgroup.c
           echo "EXPORT_SYMBOL_GPL(cgroup_apply_control_enable);" >> kernel/cgroup/cgroup.c
+          
+          # 导出 cgrp_dfl_root 变量
+          sed -i 's/static struct cgroup_root cgrp_dfl_root/struct cgroup_root cgrp_dfl_root/' kernel/cgroup/cgroup.c
+          echo "EXPORT_SYMBOL_GPL(cgrp_dfl_root);" >> kernel/cgroup/cgroup.c
           
           # 添加内存控制器子系统声明
           MEMCG_HEADER="include/linux/memcontrol.h"
