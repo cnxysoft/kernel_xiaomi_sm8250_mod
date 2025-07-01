@@ -195,6 +195,7 @@ jobs:
           #include <linux/version.h>
           #include <linux/cgroup-defs.h>
           #include <linux/cgroup.h>
+          #include <linux/memcontrol.h>  // 添加内存控制头文件
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
@@ -213,6 +214,9 @@ jobs:
           // 声明 mem_cgroup_subsys 变量
           extern struct cgroup_subsys mem_cgroup_subsys;
           
+          // 声明 mem_cgroup_init 函数
+          extern int mem_cgroup_init(void);
+          
           #endif // KERNEL_VERSION < 5.0.0
           
           #endif // _LINUX_CGROUP_COMPAT_H
@@ -224,7 +228,6 @@ jobs:
           #include <linux/fs.h>
           #include <linux/kernfs.h>
           #include <linux/slab.h>
-          #include <linux/memcontrol.h>
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
@@ -258,7 +261,6 @@ jobs:
           void compat_enable_memory_controller(void)
           {
               int ret;
-              struct cgroup_subsys_state *css;
               
               // 确保内存控制器子系统可用
               if (mem_cgroup_subsys.id < 0) {
@@ -268,15 +270,15 @@ jobs:
               
               pr_info("Enabling memory controller for cgroup v2...\n");
               
-              // 1. 创建内存控制器的根目录
-              css = mem_cgroup_css_alloc(&cgrp_dfl_root.cgrp);
-              if (IS_ERR(css)) {
-                  pr_err("Failed to allocate memcg css: %ld\n", PTR_ERR(css));
+              // 1. 确保内存控制器已初始化
+              ret = mem_cgroup_init();
+              if (ret) {
+                  pr_err("Failed to initialize memory controller: %d\n", ret);
                   return;
               }
               
-              // 2. 将内存控制器添加到根 cgroup
-              cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = css;
+              // 2. 将内存控制器添加到根cgroup的子系统掩码
+              cgrp_dfl_root.subsys_mask |= (1 << mem_cgroup_subsys.id);
               
               // 3. 启用控制器
               ret = compat_cgroup_apply_control_enable(&cgrp_dfl_root.cgrp);
@@ -284,16 +286,6 @@ jobs:
                   pr_err("Failed to enable memory controller: %d\n", ret);
                   return;
               }
-              
-              // 4. 添加内存控制器的文件接口
-              ret = cgroup_add_legacy_cftypes(&mem_cgroup_subsys, mem_cgroup_legacy_files);
-              if (ret) {
-                  pr_err("Failed to add memcg legacy files: %d\n", ret);
-                  return;
-              }
-              
-              // 5. 设置根目录的控制器标志
-              cgrp_dfl_root.subsys_mask |= 1 << mem_cgroup_subsys.id;
               
               pr_info("Memory controller enabled for cgroup v2\n");
           }
@@ -392,6 +384,10 @@ jobs:
                   print "        .dfl_cftypes = NULL, // 避免引用不存在的变量";
                   next;
               }
+              in_struct && /\.legacy_cftypes[[:space:]]*=/ {
+                  print "        .legacy_cftypes = mem_cgroup_legacy_files,";
+                  next;
+              }
               in_struct && /};/ {
                   in_struct = 0;
               }
@@ -422,6 +418,11 @@ jobs:
           };
           EXPORT_SYMBOL_GPL(mem_cgroup_subsys);
           EOF
+          fi
+          
+          # 添加缺失的函数声明（如果需要）
+          if ! grep -q "mem_cgroup_init" "mm/memcontrol.c"; then
+              echo "int mem_cgroup_init(void);" >> "include/linux/memcontrol.h"
           fi
           
           # 修改 kernel/cgroup/Makefile
@@ -455,7 +456,7 @@ jobs:
           
           endif # CGROUP_COMPAT
           EOF
-
+          
           echo "✅ cgroup v2 compatibility layer with memory controller fix added(已添加 cgroup v2 兼容层并修复内存控制器)"
 
       - name: 📥 Caching toolchain (缓存工具链)
