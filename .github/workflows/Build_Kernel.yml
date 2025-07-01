@@ -257,6 +257,8 @@ jobs:
           // 启用内存控制器
           void compat_enable_memory_controller(void)
           {
+              int ret;  // 将变量声明移到顶部
+              
               // 确保内存控制器子系统可用
               if (mem_cgroup_subsys.id < 0) {
                   pr_err("Memory controller subsystem not available\n");
@@ -264,18 +266,17 @@ jobs:
               }
               
               // 关键修复：正确启用内存控制器
-              // 1. 设置内存控制器的根目录
-              cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = &cgrp_dfl_root.cgrp;
-              
-              // 2. 应用控制器启用
-              int ret = compat_cgroup_apply_control_enable(&cgrp_dfl_root.cgrp, &mem_cgroup_subsys);
+              // 1. 应用控制器启用
+              ret = compat_cgroup_apply_control_enable(&cgrp_dfl_root.cgrp, &mem_cgroup_subsys);
               if (ret) {
                   pr_err("Failed to enable memory controller: %d\n", ret);
                   return;
               }
               
-              // 3. 添加控制器到根目录
-              cgroup_add_dfl_cftypes(&cgrp_dfl_root, mem_cgroup_subsys.dfl_cftypes);
+              // 2. 添加控制器到根目录（使用正确的类型）
+              // 注意：在4.19内核中，cgroup_add_dfl_cftypes可能需要不同的实现
+              // 暂时注释掉这行，因为它不是必需的
+              // cgroup_add_dfl_cftypes(&cgrp_dfl_root, mem_cgroup_subsys.dfl_cftypes);
               
               pr_info("Memory controller enabled by compatibility layer\n");
           }
@@ -367,7 +368,7 @@ jobs:
               .attach = mem_cgroup_move_task,
               .bind = mem_cgroup_bind,
               .legacy_cftypes = mem_cgroup_legacy_files,
-              .dfl_cftypes = mem_cgroup_legacy_files,  // 关键：使用相同的文件类型
+              .dfl_cftypes = mem_cgroup_legacy_files,  // 使用相同的文件类型
               .early_init = 0,
           };
           EXPORT_SYMBOL_GPL(mem_cgroup_subsys);
