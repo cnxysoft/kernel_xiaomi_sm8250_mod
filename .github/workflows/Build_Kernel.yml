@@ -293,14 +293,17 @@ jobs:
           
           # 在 cgroup_init 函数开头添加
           sed -i '/static int __init cgroup_init(void)/a {\
-          \t// 强制启用内存控制器\
-          \tcgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, \&memory_cgrp_subsys);\
-          \tpr_info("Memory controller enabled by compatibility layer\\\n");\
+          \t// 强制启用所有可用控制器\
+          \tcgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, NULL);\
+          \tpr_info("All available controllers enabled by compatibility layer\\n");\
           }' $CGROUP_FILE
           
           # 添加头文件
-          sed -i '1i #include <linux/memcontrol.h>' $CGROUP_FILE
-
+          sed -i '1i #include <linux/cgroup-defs.h>' $CGROUP_FILE
+          
+          # 确保 cgroup_apply_control_enable 函数可用
+          sed -i 's/static void cgroup_apply_control_enable/void cgroup_apply_control_enable/' kernel/cgroup/cgroup.c
+          
           echo "✅ Memory controller initialization fixed (已修复内存控制器初始化)"
 
       - name: 📥 Caching toolchain (缓存工具链)
