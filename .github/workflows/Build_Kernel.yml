@@ -299,25 +299,23 @@ jobs:
           CGROUP_FILE="kernel/cgroup/cgroup.c"
           
           # 移除之前添加的代码
-          sed -i '/\/\/ 强制启用内存控制器/,/^\tpr_info("Memory controller enabled by compatibility layer\\n");/d' $CGROUP_FILE
-          sed -i '/#include <linux\/memcontrol.h>/d' $CGROUP_FILE
+          sed -i '/\/\/ 强制启用所有控制器/,/^\tpr_info("All controllers enabled by compatibility layer\\n");/d' $CGROUP_FILE
+          sed -i '/#include <linux\/cgroup_subsys.h>/d' $CGROUP_FILE
           
           # 3. 在 cgroup_init 函数中正确调用 cgroup_apply_control_enable
           # 找到 cgroup_init 函数的开头
           sed -i '/static int __init cgroup_init(void)/a \
-          \t// 强制启用所有控制器\
+          \t// 强制启用内存控制器\
           \t{\
-          \t\tstruct cgroup_subsys *ss;\
-          \t\tfor_each_subsys(ss) {\
-          \t\t\tif (ss->id >= 0) {\
-          \t\t\t\tcgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, ss);\
-          \t\t\t}\
+          \t\tstruct cgroup_subsys *mem_ss = \&mem_cgroup_subsys;\
+          \t\tif (mem_ss->id >= 0) {\
+          \t\t\tcgroup_apply_control_enable(\&cgrp_dfl_root.cgrp, mem_ss);\
+          \t\t\tpr_info("Memory controller enabled by compatibility layer\\n");\
           \t\t}\
-          \t\tpr_info("All controllers enabled by compatibility layer\\n");\
           \t}' $CGROUP_FILE
           
           # 4. 添加必要的头文件
-          sed -i '1i #include <linux/cgroup_subsys.h>' $CGROUP_FILE
+          sed -i '1i #include <linux/memcontrol.h>' $CGROUP_FILE
           
           # 5. 修复 pr_fmt 重定义问题
           # 移除 cgroup.c 中可能导致冲突的 pr_fmt 定义
@@ -342,6 +340,14 @@ jobs:
               echo -e "\n/* Compatibility subsystem declaration */" >> $MEMCG_HEADER
               echo "extern struct cgroup_subsys mem_cgroup_subsys;" >> $MEMCG_HEADER
           fi
+          
+          # 10. 修复头文件包含顺序问题
+          # 在 cgroup.c 中添加基本类型定义头文件
+          sed -i '1i #include <linux/types.h>' $CGROUP_FILE
+          sed -i '1i #include <uapi/linux/types.h>' $CGROUP_FILE
+          
+          # 11. 修复变量名冲突
+          sed -i 's/struct cgroup_subsys \*ss;/struct cgroup_subsys *tmp_ss;/g' $CGROUP_FILE
           
           echo "✅ Memory controller initialization errors fixed (已修复内存控制器初始化错误)"
 
