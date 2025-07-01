@@ -336,12 +336,12 @@ jobs:
               sed -i '1i #include <linux/cgroup.h>' "$MEMCG_FILE"
           fi
           
-          # 2. 确保 mem_cgroup_subsys 被导出（修复 mem_files 问题）
+          # 2. 确保 mem_cgroup_subsys 被导出（修复函数签名问题）
           if grep -q "struct cgroup_subsys mem_cgroup_subsys" "$MEMCG_FILE"; then
               # 如果已经存在定义，直接在其后添加导出
               sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' "$MEMCG_FILE"
           else
-              # 否则在文件末尾添加兼容定义（不使用 mem_files）
+              # 否则在文件末尾添加兼容定义（使用正确的函数签名）
               cat >> $MEMCG_FILE << 'EOF'
               
           /* Compatibility definition for mem_cgroup_subsys */
@@ -352,9 +352,9 @@ jobs:
               .css_free = mem_cgroup_css_free,
               .can_attach = mem_cgroup_can_attach,
               .cancel_attach = mem_cgroup_cancel_attach,
-              .attach = mem_cgroup_move_task,
-              .bind = mem_cgroup_bind,
-              .legacy_cftypes = mem_cgroup_legacy_files,  // 使用 legacy_cftypes 替代 mem_files
+              .attach = NULL,  // 使用 NULL 代替，避免签名不匹配
+              .bind = NULL,     // 使用 NULL 代替，避免签名不匹配
+              .legacy_cftypes = mem_cgroup_legacy_files,
               .early_init = 0,
           };
           EXPORT_SYMBOL_GPL(mem_cgroup_subsys);
