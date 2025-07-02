@@ -219,6 +219,9 @@ jobs:
           void mem_cgroup_free(struct mem_cgroup *memcg);
           int mem_cgroup_css_online(struct cgroup_subsys_state *css);
           
+          // 声明 mem_cgroup_legacy_files
+          extern struct cftype mem_cgroup_legacy_files[];
+          
           #endif // KERNEL_VERSION < 5.0.0
           
           #endif // _LINUX_CGROUP_COMPAT_H
@@ -287,15 +290,13 @@ jobs:
               cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = css;
               css->cgroup = &cgrp_dfl_root.cgrp;  // 设置回指指针
               
-              // 3. 上线 CSS（如果可用）
-              if (mem_cgroup_css_online) {
-                  ret = mem_cgroup_css_online(css);
-                  if (ret) {
-                      pr_err("Failed to online memcg css: %d\n", ret);
-                      cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = NULL;
-                      mem_cgroup_free(memcg);
-                      return;
-                  }
+              // 3. 上线 CSS - 直接调用函数
+              ret = mem_cgroup_css_online(css);
+              if (ret) {
+                  pr_err("Failed to online memcg css: %d\n", ret);
+                  cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = NULL;
+                  mem_cgroup_free(memcg);
+                  return;
               }
               
               // 4. 将内存控制器添加到根cgroup的子系统掩码
@@ -388,7 +389,7 @@ jobs:
               sed -i '1i #include <linux/cgroup.h>' "$MEMCG_FILE"
           fi
           
-          # 2. 导出关键函数和变量 - 使用更安全的方法
+          # 2. 导出关键函数和变量 - 使用安全的方法
           # 备份文件
           cp "$MEMCG_FILE" "${MEMCG_FILE}.bak"
           
@@ -396,12 +397,12 @@ jobs:
           awk '
           # 处理 mem_cgroup_free 函数
           /^static void mem_cgroup_free\(struct mem_cgroup \*memcg\)/ {
-              gsub(/^static /, "")  # 移除 static 关键字
+              gsub(/^static /, "")
               print
               in_function = 1
               next
           }
-          in_function && /^}/ {
+          in_function == 1 && /^}/ {
               print
               print "EXPORT_SYMBOL_GPL(mem_cgroup_free);"
               in_function = 0
@@ -410,7 +411,7 @@ jobs:
           
           # 处理 mem_cgroup_alloc 函数
           /^static struct mem_cgroup \*mem_cgroup_alloc\(void\)/ {
-              gsub(/^static /, "")  # 移除 static 关键字
+              gsub(/^static /, "")
               print
               in_function = 2
               next
@@ -424,7 +425,7 @@ jobs:
           
           # 处理 mem_cgroup_css_online 函数
           /^static int mem_cgroup_css_online\(struct cgroup_subsys_state \*css\)/ {
-              gsub(/^static /, "")  # 移除 static 关键字
+              gsub(/^static /, "")
               print
               in_function = 3
               next
@@ -438,7 +439,7 @@ jobs:
           
           # 处理 mem_cgroup_legacy_files 数组
           /static struct cftype mem_cgroup_legacy_files/ {
-              gsub(/static /, "")  # 移除 static 关键字
+              gsub(/static /, "")
               print
               in_array = 1
               next
@@ -483,13 +484,6 @@ jobs:
           { print }
           ' "${MEMCG_FILE}.bak" > "$MEMCG_FILE"
           
-          # 确保添加导出语句
-          if ! grep -q "EXPORT_SYMBOL_GPL(mem_cgroup_subsys)" "$MEMCG_FILE"; then
-              sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' "$MEMCG_FILE"
-          fi
-          
-          # ============================== 修改其他文件 ==============================
-          
           # 修改 kernel/cgroup/Makefile
           sed -i '/^obj-y :=/a obj-y += compat.o' kernel/cgroup/Makefile
           
@@ -522,7 +516,7 @@ jobs:
           endif # CGROUP_COMPAT
           EOF
           
-          echo "✅ cgroup v2 compatibility layer with memory controller fix added(已添加 cgroup v2 兼容层并修复内存控制器)"
+          echo "✅ cgroup v2 compatibility layer with memory controller fix added"
 
       - name: 📥 Caching toolchain (缓存工具链)
         id: cache-toolchain
