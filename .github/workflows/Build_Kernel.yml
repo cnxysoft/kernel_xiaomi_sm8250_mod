@@ -214,9 +214,6 @@ jobs:
           // 声明 mem_cgroup_subsys 变量
           extern struct cgroup_subsys mem_cgroup_subsys;
           
-          // 声明 mem_cgroup_init 函数
-          extern int mem_cgroup_init(void);
-          
           #endif // KERNEL_VERSION < 5.0.0
           
           #endif // _LINUX_CGROUP_COMPAT_H
@@ -270,17 +267,10 @@ jobs:
               
               pr_info("Enabling memory controller for cgroup v2...\n");
               
-              // 1. 确保内存控制器已初始化
-              ret = mem_cgroup_init();
-              if (ret) {
-                  pr_err("Failed to initialize memory controller: %d\n", ret);
-                  return;
-              }
-              
-              // 2. 将内存控制器添加到根cgroup的子系统掩码
+              // 1. 将内存控制器添加到根cgroup的子系统掩码
               cgrp_dfl_root.subsys_mask |= (1 << mem_cgroup_subsys.id);
               
-              // 3. 启用控制器
+              // 2. 启用控制器
               ret = compat_cgroup_apply_control_enable(&cgrp_dfl_root.cgrp);
               if (ret) {
                   pr_err("Failed to enable memory controller: %d\n", ret);
@@ -418,11 +408,6 @@ jobs:
           };
           EXPORT_SYMBOL_GPL(mem_cgroup_subsys);
           EOF
-          fi
-          
-          # 添加缺失的函数声明（如果需要）
-          if ! grep -q "mem_cgroup_init" "mm/memcontrol.c"; then
-              echo "int mem_cgroup_init(void);" >> "include/linux/memcontrol.h"
           fi
           
           # 修改 kernel/cgroup/Makefile
