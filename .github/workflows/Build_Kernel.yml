@@ -195,7 +195,7 @@ jobs:
           #include <linux/version.h>
           #include <linux/cgroup-defs.h>
           #include <linux/cgroup.h>
-          #include <linux/memcontrol.h>  // 添加内存控制头文件
+          #include <linux/memcontrol.h>
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
@@ -214,6 +214,11 @@ jobs:
           // 声明 mem_cgroup_subsys 变量
           extern struct cgroup_subsys mem_cgroup_subsys;
           
+          // 声明必要的 memcontrol 函数
+          struct mem_cgroup *mem_cgroup_alloc(void);
+          void mem_cgroup_free(struct mem_cgroup *memcg);
+          int mem_cgroup_css_online(struct cgroup_subsys_state *css);
+          
           #endif // KERNEL_VERSION < 5.0.0
           
           #endif // _LINUX_CGROUP_COMPAT_H
@@ -225,6 +230,7 @@ jobs:
           #include <linux/fs.h>
           #include <linux/kernfs.h>
           #include <linux/slab.h>
+          #include <linux/err.h>
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
@@ -258,6 +264,8 @@ jobs:
           void compat_enable_memory_controller(void)
           {
               int ret;
+              struct mem_cgroup *memcg;
+              struct cgroup_subsys_state *css;
               
               // 确保内存控制器子系统可用
               if (mem_cgroup_subsys.id < 0) {
@@ -267,14 +275,46 @@ jobs:
               
               pr_info("Enabling memory controller for cgroup v2...\n");
               
-              // 1. 将内存控制器添加到根cgroup的子系统掩码
+              // 1. 分配内存控制器的根实例
+              memcg = mem_cgroup_alloc();
+              if (IS_ERR(memcg)) {
+                  pr_err("Failed to allocate root mem_cgroup: %ld\n", PTR_ERR(memcg));
+                  return;
+              }
+              css = &memcg->css;
+              
+              // 2. 将内存控制器添加到根cgroup
+              cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = css;
+              css->cgroup = &cgrp_dfl_root.cgrp;  // 设置回指指针
+              
+              // 3. 上线 CSS（如果可用）
+              if (mem_cgroup_css_online) {
+                  ret = mem_cgroup_css_online(css);
+                  if (ret) {
+                      pr_err("Failed to online memcg css: %d\n", ret);
+                      cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = NULL;
+                      mem_cgroup_free(memcg);
+                      return;
+                  }
+              }
+              
+              // 4. 将内存控制器添加到根cgroup的子系统掩码
               cgrp_dfl_root.subsys_mask |= (1 << mem_cgroup_subsys.id);
               
-              // 2. 启用控制器
+              // 5. 启用控制器
               ret = compat_cgroup_apply_control_enable(&cgrp_dfl_root.cgrp);
               if (ret) {
                   pr_err("Failed to enable memory controller: %d\n", ret);
+                  cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = NULL;
+                  mem_cgroup_free(memcg);
                   return;
+              }
+              
+              // 6. 添加内存控制器的文件接口
+              ret = cgroup_add_legacy_cftypes(&mem_cgroup_subsys, mem_cgroup_legacy_files);
+              if (ret) {
+                  pr_err("Failed to add memcg legacy files: %d\n", ret);
+                  // 继续而不是返回，因为核心功能可能仍然工作
               }
               
               pr_info("Memory controller enabled for cgroup v2\n");
@@ -340,7 +380,7 @@ jobs:
               echo "EXPORT_SYMBOL_GPL(cgrp_dfl_root);" >> kernel/cgroup/cgroup.c
           fi
           
-          # 在 memcontrol.c 中确保 mem_cgroup_subsys 正确导出
+          # ============================== 修复 mm/memcontrol.c ==============================
           MEMCG_FILE="mm/memcontrol.c"
           
           # 1. 添加必要的头文件
@@ -348,67 +388,80 @@ jobs:
               sed -i '1i #include <linux/cgroup.h>' "$MEMCG_FILE"
           fi
           
-          # 2. 确保 mem_cgroup_subsys 被导出（使用正确的函数签名）
-          if grep -q "struct cgroup_subsys mem_cgroup_subsys" "$MEMCG_FILE"; then
-              # 如果已经存在定义，修改 .attach 和 .bind 为 NULL
-              # 首先备份文件
-              cp "$MEMCG_FILE" "${MEMCG_FILE}.bak"
-              
-              # 使用 AWK 脚本安全地修改结构体
-              awk '
-              BEGIN { in_struct = 0; }
-              /struct cgroup_subsys mem_cgroup_subsys[[:space:]]*=[[:space:]]*{/ {
-                  in_struct = 1;
-                  print;
-                  next;
-              }
-              in_struct && /\.attach[[:space:]]*=[[:space:]]*mem_cgroup_move_task,/ {
-                  print "        .attach = NULL, // 修复签名不匹配";
-                  next;
-              }
-              in_struct && /\.bind[[:space:]]*=[[:space:]]*mem_cgroup_bind,/ {
-                  print "        .bind = NULL, // 修复签名不匹配";
-                  next;
-              }
-              in_struct && /\.dfl_cftypes[[:space:]]*=/ {
-                  print "        .dfl_cftypes = NULL, // 避免引用不存在的变量";
-                  next;
-              }
-              in_struct && /\.legacy_cftypes[[:space:]]*=/ {
-                  print "        .legacy_cftypes = mem_cgroup_legacy_files,";
-                  next;
-              }
-              in_struct && /};/ {
-                  in_struct = 0;
-              }
-              { print; }
-              ' "${MEMCG_FILE}.bak" > "$MEMCG_FILE"
-              
-              # 确保添加导出语句
-              if ! grep -q "EXPORT_SYMBOL_GPL(mem_cgroup_subsys)" "$MEMCG_FILE"; then
-                  sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' "$MEMCG_FILE"
-              fi
+          # 2. 导出关键函数和变量
+          # 导出 mem_cgroup_alloc
+          if grep -q "struct mem_cgroup \*mem_cgroup_alloc(void)" "$MEMCG_FILE"; then
+              # 在函数定义后添加导出
+              sed -i '/struct mem_cgroup \*mem_cgroup_alloc(void)/a EXPORT_SYMBOL_GPL(mem_cgroup_alloc);' "$MEMCG_FILE"
           else
-              # 否则在文件末尾添加兼容定义（使用正确的函数签名）
-              cat >> $MEMCG_FILE << 'EOF'
-              
-          /* Compatibility definition for mem_cgroup_subsys */
-          struct cgroup_subsys mem_cgroup_subsys = {
-              .css_alloc = mem_cgroup_css_alloc,
-              .css_online = mem_cgroup_css_online,
-              .css_offline = mem_cgroup_css_offline,
-              .css_free = mem_cgroup_css_free,
-              .can_attach = mem_cgroup_can_attach,
-              .cancel_attach = mem_cgroup_cancel_attach,
-              .attach = NULL,  // 使用 NULL 代替，避免签名不匹配
-              .bind = NULL,     // 使用 NULL 代替，避免签名不匹配
-              .legacy_cftypes = mem_cgroup_legacy_files,
-              .dfl_cftypes = NULL,  // 避免引用不存在的变量
-              .early_init = 0,
-          };
-          EXPORT_SYMBOL_GPL(mem_cgroup_subsys);
-          EOF
+              # 尝试在文件末尾添加导出
+              echo "EXPORT_SYMBOL_GPL(mem_cgroup_alloc);" >> "$MEMCG_FILE"
           fi
+          
+          # 导出 mem_cgroup_free
+          if grep -q "void mem_cgroup_free(struct mem_cgroup \*memcg)" "$MEMCG_FILE"; then
+              sed -i '/void mem_cgroup_free(struct mem_cgroup \*memcg)/a EXPORT_SYMBOL_GPL(mem_cgroup_free);' "$MEMCG_FILE"
+          else
+              echo "EXPORT_SYMBOL_GPL(mem_cgroup_free);" >> "$MEMCG_FILE"
+          fi
+          
+          # 导出 mem_cgroup_css_online
+          if grep -q "int mem_cgroup_css_online(struct cgroup_subsys_state \*css)" "$MEMCG_FILE"; then
+              sed -i '/int mem_cgroup_css_online(struct cgroup_subsys_state \*css)/a EXPORT_SYMBOL_GPL(mem_cgroup_css_online);' "$MEMCG_FILE"
+          else
+              echo "EXPORT_SYMBOL_GPL(mem_cgroup_css_online);" >> "$MEMCG_FILE"
+          fi
+          
+          # 导出 mem_cgroup_legacy_files
+          if grep -q "static struct cftype mem_cgroup_legacy_files" "$MEMCG_FILE"; then
+              # 移除 static 并添加导出
+              sed -i 's/static struct cftype mem_cgroup_legacy_files\[\]/struct cftype mem_cgroup_legacy_files[]/' "$MEMCG_FILE"
+              echo "EXPORT_SYMBOL_GPL(mem_cgroup_legacy_files);" >> "$MEMCG_FILE"
+          elif grep -q "struct cftype mem_cgroup_legacy_files" "$MEMCG_FILE"; then
+              # 直接添加导出
+              echo "EXPORT_SYMBOL_GPL(mem_cgroup_legacy_files);" >> "$MEMCG_FILE"
+          fi
+          
+          # 3. 修复 mem_cgroup_subsys 结构体
+          # 备份文件
+          cp "$MEMCG_FILE" "${MEMCG_FILE}.bak"
+          
+          # 使用 AWK 脚本安全地修改结构体
+          awk '
+          BEGIN { in_struct = 0; }
+          /struct cgroup_subsys mem_cgroup_subsys[[:space:]]*=[[:space:]]*{/ {
+              in_struct = 1;
+              print;
+              next;
+          }
+          in_struct && /\.attach[[:space:]]*=[[:space:]]*mem_cgroup_move_task,/ {
+              print "        .attach = NULL, // 修复签名不匹配";
+              next;
+          }
+          in_struct && /\.bind[[:space:]]*=[[:space:]]*mem_cgroup_bind,/ {
+              print "        .bind = NULL, // 修复签名不匹配";
+              next;
+          }
+          in_struct && /\.dfl_cftypes[[:space:]]*=/ {
+              print "        .dfl_cftypes = NULL, // 避免引用不存在的变量";
+              next;
+          }
+          in_struct && /\.legacy_cftypes[[:space:]]*=/ {
+              print "        .legacy_cftypes = mem_cgroup_legacy_files,";
+              next;
+          }
+          in_struct && /};/ {
+              in_struct = 0;
+          }
+          { print; }
+          ' "${MEMCG_FILE}.bak" > "$MEMCG_FILE"
+          
+          # 确保添加导出语句
+          if ! grep -q "EXPORT_SYMBOL_GPL(mem_cgroup_subsys)" "$MEMCG_FILE"; then
+              sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' "$MEMCG_FILE"
+          fi
+          
+          # ============================== 修改其他文件 ==============================
           
           # 修改 kernel/cgroup/Makefile
           sed -i '/^obj-y :=/a obj-y += compat.o' kernel/cgroup/Makefile
@@ -434,7 +487,7 @@ jobs:
           
           config CGROUP_COMPAT_DEBUG
               bool "Enable debug output for cgroup compatibility layer"
-              default y  # 默认开启调试输出
+              default y
               help
                 Enable verbose debugging output for the cgroup v2 compatibility layer.
                 This will log all cgroup v2 operations to the kernel log.
