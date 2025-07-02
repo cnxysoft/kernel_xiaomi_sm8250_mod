@@ -388,45 +388,78 @@ jobs:
               sed -i '/EXPORT_SYMBOL_GPL(memory_cgrp_subsys);/d' "$MEMCG_FILE"
           fi
           
-          # 3. 导出关键函数和变量
-          # 导出 mem_cgroup_alloc
-          if grep -q "struct mem_cgroup \*mem_cgroup_alloc(void)" "$MEMCG_FILE"; then
-              # 在函数定义后添加导出
-              sed -i '/struct mem_cgroup \*mem_cgroup_alloc(void)/a EXPORT_SYMBOL_GPL(mem_cgroup_alloc);' "$MEMCG_FILE"
-          else
-              # 尝试在文件末尾添加导出
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_alloc);" >> "$MEMCG_FILE"
-          fi
-          
-          # 导出 mem_cgroup_free
-          if grep -q "void mem_cgroup_free(struct mem_cgroup \*memcg)" "$MEMCG_FILE"; then
-              sed -i '/void mem_cgroup_free(struct mem_cgroup \*memcg)/a EXPORT_SYMBOL_GPL(mem_cgroup_free);' "$MEMCG_FILE"
-          else
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_free);" >> "$MEMCG_FILE"
-          fi
-          
-          # 导出 mem_cgroup_css_online
-          if grep -q "int mem_cgroup_css_online(struct cgroup_subsys_state \*css)" "$MEMCG_FILE"; then
-              sed -i '/int mem_cgroup_css_online(struct cgroup_subsys_state \*css)/a EXPORT_SYMBOL_GPL(mem_cgroup_css_online);' "$MEMCG_FILE"
-          else
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_css_online);" >> "$MEMCG_FILE"
-          fi
-          
-          # 导出 mem_cgroup_legacy_files
-          if grep -q "static struct cftype mem_cgroup_legacy_files" "$MEMCG_FILE"; then
-              # 移除 static 并添加导出
-              sed -i 's/static struct cftype mem_cgroup_legacy_files\[\]/struct cftype mem_cgroup_legacy_files[]/' "$MEMCG_FILE"
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_legacy_files);" >> "$MEMCG_FILE"
-          elif grep -q "struct cftype mem_cgroup_legacy_files" "$MEMCG_FILE"; then
-              # 直接添加导出
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_legacy_files);" >> "$MEMCG_FILE"
-          fi
-          
-          # 4. 修复 mem_cgroup_subsys 结构体
+          # 3. 导出关键函数和变量（不添加额外分号）
           # 备份文件
           cp "$MEMCG_FILE" "${MEMCG_FILE}.bak"
           
-          # 使用 AWK 脚本安全地修改结构体
+          # 使用 AWK 脚本安全地修改函数定义并添加导出
+          awk '
+          # 移除 mem_cgroup_alloc 的 static 并添加导出
+          /static struct mem_cgroup \*mem_cgroup_alloc\(void\)/ {
+              gsub(/static /, "");
+              print;
+              # 读取整个函数
+              while (getline > 0) {
+                  print;
+                  if ($0 ~ /^}/) {
+                      print "EXPORT_SYMBOL_GPL(mem_cgroup_alloc);";
+                      break;
+                  }
+              }
+              next;
+          }
+          
+          # 移除 mem_cgroup_free 的 static 并添加导出
+          /static void mem_cgroup_free\(struct mem_cgroup \*memcg\)/ {
+              gsub(/static /, "");
+              print;
+              # 读取整个函数
+              while (getline > 0) {
+                  print;
+                  if ($0 ~ /^}/) {
+                      print "EXPORT_SYMBOL_GPL(mem_cgroup_free);";
+                      break;
+                  }
+              }
+              next;
+          }
+          
+          # 移除 mem_cgroup_css_online 的 static 并添加导出
+          /static int mem_cgroup_css_online\(struct cgroup_subsys_state \*css\)/ {
+              gsub(/static /, "");
+              print;
+              # 读取整个函数
+              while (getline > 0) {
+                  print;
+                  if ($0 ~ /^}/) {
+                      print "EXPORT_SYMBOL_GPL(mem_cgroup_css_online);";
+                      break;
+                  }
+              }
+              next;
+          }
+          
+          # 处理 mem_cgroup_legacy_files
+          /static struct cftype mem_cgroup_legacy_files/ {
+              gsub(/static /, "");
+              print;
+              # 读取整个数组定义
+              while (getline > 0) {
+                  print;
+                  if ($0 ~ /};/) {
+                      print "EXPORT_SYMBOL_GPL(mem_cgroup_legacy_files);";
+                      break;
+                  }
+              }
+              next;
+          }
+          
+          # 默认打印其他行
+          { print; }
+          ' "${MEMCG_FILE}.bak" > "$MEMCG_FILE"
+          
+          # 4. 修复 mem_cgroup_subsys 结构体
+          cp "$MEMCG_FILE" "${MEMCG_FILE}.bak2"
           awk '
           BEGIN { in_struct = 0; }
           /struct cgroup_subsys mem_cgroup_subsys[[:space:]]*=[[:space:]]*{/ {
@@ -454,12 +487,14 @@ jobs:
               in_struct = 0;
           }
           { print; }
-          ' "${MEMCG_FILE}.bak" > "$MEMCG_FILE"
+          ' "${MEMCG_FILE}.bak2" > "$MEMCG_FILE"
           
           # 确保添加导出语句
           if ! grep -q "EXPORT_SYMBOL_GPL(mem_cgroup_subsys)" "$MEMCG_FILE"; then
               sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' "$MEMCG_FILE"
           fi
+          
+          # ============================== 修改其他文件 ==============================
           
           # 修改 kernel/cgroup/Makefile
           sed -i '/^obj-y :=/a obj-y += compat.o' kernel/cgroup/Makefile
