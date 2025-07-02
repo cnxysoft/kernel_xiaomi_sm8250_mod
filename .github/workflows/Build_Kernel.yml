@@ -388,72 +388,99 @@ jobs:
               sed -i '1i #include <linux/cgroup.h>' "$MEMCG_FILE"
           fi
           
-          # 2. 导出关键函数和变量
-          # 导出 mem_cgroup_alloc
-          if grep -q "struct mem_cgroup \*mem_cgroup_alloc(void)" "$MEMCG_FILE"; then
-              # 在函数定义后添加导出
-              sed -i '/struct mem_cgroup \*mem_cgroup_alloc(void)/a EXPORT_SYMBOL_GPL(mem_cgroup_alloc);' "$MEMCG_FILE"
-          else
-              # 尝试在文件末尾添加导出
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_alloc);" >> "$MEMCG_FILE"
-          fi
-          
-          # 导出 mem_cgroup_free
-          if grep -q "void mem_cgroup_free(struct mem_cgroup \*memcg)" "$MEMCG_FILE"; then
-              sed -i '/void mem_cgroup_free(struct mem_cgroup \*memcg)/a EXPORT_SYMBOL_GPL(mem_cgroup_free);' "$MEMCG_FILE"
-          else
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_free);" >> "$MEMCG_FILE"
-          fi
-          
-          # 导出 mem_cgroup_css_online
-          if grep -q "int mem_cgroup_css_online(struct cgroup_subsys_state \*css)" "$MEMCG_FILE"; then
-              sed -i '/int mem_cgroup_css_online(struct cgroup_subsys_state \*css)/a EXPORT_SYMBOL_GPL(mem_cgroup_css_online);' "$MEMCG_FILE"
-          else
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_css_online);" >> "$MEMCG_FILE"
-          fi
-          
-          # 导出 mem_cgroup_legacy_files
-          if grep -q "static struct cftype mem_cgroup_legacy_files" "$MEMCG_FILE"; then
-              # 移除 static 并添加导出
-              sed -i 's/static struct cftype mem_cgroup_legacy_files\[\]/struct cftype mem_cgroup_legacy_files[]/' "$MEMCG_FILE"
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_legacy_files);" >> "$MEMCG_FILE"
-          elif grep -q "struct cftype mem_cgroup_legacy_files" "$MEMCG_FILE"; then
-              # 直接添加导出
-              echo "EXPORT_SYMBOL_GPL(mem_cgroup_legacy_files);" >> "$MEMCG_FILE"
-          fi
-          
-          # 3. 修复 mem_cgroup_subsys 结构体
+          # 2. 导出关键函数和变量 - 使用更安全的方法
           # 备份文件
           cp "$MEMCG_FILE" "${MEMCG_FILE}.bak"
           
-          # 使用 AWK 脚本安全地修改结构体
+          # 使用 AWK 脚本安全地添加导出语句
           awk '
-          BEGIN { in_struct = 0; }
-          /struct cgroup_subsys mem_cgroup_subsys[[:space:]]*=[[:space:]]*{/ {
-              in_struct = 1;
-              print;
-              next;
+          # 处理 mem_cgroup_free 函数
+          /^static void mem_cgroup_free\(struct mem_cgroup \*memcg\)/ {
+              gsub(/^static /, "")  # 移除 static 关键字
+              print
+              in_function = 1
+              next
           }
-          in_struct && /\.attach[[:space:]]*=[[:space:]]*mem_cgroup_move_task,/ {
-              print "        .attach = NULL, // 修复签名不匹配";
-              next;
+          in_function && /^}/ {
+              print
+              print "EXPORT_SYMBOL_GPL(mem_cgroup_free);"
+              in_function = 0
+              next
           }
-          in_struct && /\.bind[[:space:]]*=[[:space:]]*mem_cgroup_bind,/ {
-              print "        .bind = NULL, // 修复签名不匹配";
-              next;
+          
+          # 处理 mem_cgroup_alloc 函数
+          /^static struct mem_cgroup \*mem_cgroup_alloc\(void\)/ {
+              gsub(/^static /, "")  # 移除 static 关键字
+              print
+              in_function = 2
+              next
           }
-          in_struct && /\.dfl_cftypes[[:space:]]*=/ {
-              print "        .dfl_cftypes = NULL, // 避免引用不存在的变量";
-              next;
+          in_function == 2 && /^}/ {
+              print
+              print "EXPORT_SYMBOL_GPL(mem_cgroup_alloc);"
+              in_function = 0
+              next
           }
-          in_struct && /\.legacy_cftypes[[:space:]]*=/ {
-              print "        .legacy_cftypes = mem_cgroup_legacy_files,";
-              next;
+          
+          # 处理 mem_cgroup_css_online 函数
+          /^static int mem_cgroup_css_online\(struct cgroup_subsys_state \*css\)/ {
+              gsub(/^static /, "")  # 移除 static 关键字
+              print
+              in_function = 3
+              next
           }
-          in_struct && /};/ {
-              in_struct = 0;
+          in_function == 3 && /^}/ {
+              print
+              print "EXPORT_SYMBOL_GPL(mem_cgroup_css_online);"
+              in_function = 0
+              next
           }
-          { print; }
+          
+          # 处理 mem_cgroup_legacy_files 数组
+          /static struct cftype mem_cgroup_legacy_files/ {
+              gsub(/static /, "")  # 移除 static 关键字
+              print
+              in_array = 1
+              next
+          }
+          in_array && /^};/ {
+              print
+              print "EXPORT_SYMBOL_GPL(mem_cgroup_legacy_files);"
+              in_array = 0
+              next
+          }
+          
+          # 处理 mem_cgroup_subsys 结构体
+          /struct cgroup_subsys mem_cgroup_subsys/ {
+              print
+              in_struct = 1
+              next
+          }
+          in_struct && /\.attach = mem_cgroup_move_task,/ {
+              print "        .attach = NULL, // 修复签名不匹配"
+              next
+          }
+          in_struct && /\.bind = mem_cgroup_bind,/ {
+              print "        .bind = NULL, // 修复签名不匹配"
+              next
+          }
+          in_struct && /\.dfl_cftypes = / {
+              print "        .dfl_cftypes = NULL, // 避免引用不存在的变量"
+              next
+          }
+          in_struct && /\.legacy_cftypes = / {
+              print "        .legacy_cftypes = mem_cgroup_legacy_files,"
+              next
+          }
+          in_struct && /^};/ {
+              print
+              print "EXPORT_SYMBOL_GPL(mem_cgroup_subsys);"
+              in_struct = 0
+              next
+          }
+          
+          # 默认打印所有行
+          { print }
           ' "${MEMCG_FILE}.bak" > "$MEMCG_FILE"
           
           # 确保添加导出语句
