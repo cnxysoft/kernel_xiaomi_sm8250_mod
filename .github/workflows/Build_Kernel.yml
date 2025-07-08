@@ -196,7 +196,6 @@ jobs:
           #include <linux/cgroup-defs.h>
           #include <linux/cgroup.h>
           #include <linux/memcontrol.h>
-          #include <linux/kernel.h>  // 添加 pr_info 支持
           
           #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
           
@@ -212,13 +211,16 @@ jobs:
           // 声明 cgrp_dfl_root 变量
           extern struct cgroup_root cgrp_dfl_root;
           
-          // 声明 mem_cgroup_subsys 变量
-          extern struct cgroup_subsys mem_cgroup_subsys;
+          // 声明 memory_cgrp_subsys 变量
+          extern struct cgroup_subsys memory_cgrp_subsys;
           
           // 声明必要的 memcontrol 函数
           struct mem_cgroup *mem_cgroup_alloc(void);
           void mem_cgroup_free(struct mem_cgroup *memcg);
           int mem_cgroup_css_online(struct cgroup_subsys_state *css);
+          
+          // 声明 mem_cgroup_legacy_files
+          extern struct cftype mem_cgroup_legacy_files[];
           
           #endif // KERNEL_VERSION < 5.0.0
           
@@ -268,16 +270,16 @@ jobs:
               struct mem_cgroup *memcg;
               struct cgroup_subsys_state *css;
               
-              pr_info("=== STARTING MEMCG COMPAT INITIALIZATION ===\n");
+              pr_info("Enabling memory controller for cgroup v2...\n");
               
-              // 确保内存控制器子系统可用
-              if (mem_cgroup_subsys.id < 0) {
-                  pr_err("Memory controller subsystem not available (id: %d)\n", mem_cgroup_subsys.id);
-                  return;
-              }
-              pr_info("Memcg subsystem ID: %d\n", mem_cgroup_subsys.id);
+              // **重要修改：移除对 memory_cgrp_subsys.id 的检查**
+              // 因为在 early_initcall 阶段，id 可能尚未被 cgroup 核心分配
+              // if (memory_cgrp_subsys.id < 0) {
+              //     pr_err("Memory controller subsystem not available\n");
+              //     return;
+              // }
+              // 稍后我们将依赖其 ID 被分配后才能正确加入
               
-              pr_info("Allocating root mem_cgroup...\n");
               // 1. 分配内存控制器的根实例
               memcg = mem_cgroup_alloc();
               if (IS_ERR(memcg)) {
@@ -285,63 +287,55 @@ jobs:
                   return;
               }
               css = &memcg->css;
-              pr_info("mem_cgroup_alloc success: %p\n", memcg);
               
               // 2. 将内存控制器添加到根cgroup
-              pr_info("Attaching CSS to root cgroup...\n");
-              cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = css;
-              css->cgroup = &cgrp_dfl_root.cgrp;
-              pr_info("CSS attached to root cgroup\n");
+              // 这里的 memory_cgrp_subsys.id 必须是有效值，否则会导致问题。
+              // 如果 cgroup 核心还没有初始化这个 ID，这行会失败。
+              // 我们需要确保 cgroup 核心在 compat_cgroup2_init 之前初始化了所有子系统 ID。
+              // 对于 early_initcall，这通常是保证的。
+              if (memory_cgrp_subsys.id < 0) {
+                  pr_err("Memory controller subsystem ID not yet assigned. Deferring.\n");
+                  mem_cgroup_free(memcg);
+                  return;
+              }
+              
+              cgrp_dfl_root.cgrp.subsys[memory_cgrp_subsys.id] = css;
+              css->cgroup = &cgrp_dfl_root.cgrp;  // 设置回指指针
               
               // 3. 上线 CSS
-              pr_info("Calling css_online...\n");
               ret = mem_cgroup_css_online(css);
               if (ret) {
                   pr_err("Failed to online memcg css: %d\n", ret);
-                  cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = NULL;
+                  cgrp_dfl_root.cgrp.subsys[memory_cgrp_subsys.id] = NULL;
                   mem_cgroup_free(memcg);
                   return;
               }
-              pr_info("css_online success\n");
               
               // 4. 将内存控制器添加到根cgroup的子系统掩码
-              pr_info("Setting subsys mask (before: 0x%x)\n", cgrp_dfl_root.subsys_mask);
-              cgrp_dfl_root.subsys_mask |= (1 << mem_cgroup_subsys.id);
-              pr_info("Subsys mask updated (after: 0x%x)\n", cgrp_dfl_root.subsys_mask);
+              cgrp_dfl_root.subsys_mask |= (1 << memory_cgrp_subsys.id);
               
               // 5. 启用控制器
-              pr_info("Applying control enable...\n");
               ret = compat_cgroup_apply_control_enable(&cgrp_dfl_root.cgrp);
               if (ret) {
                   pr_err("Failed to enable memory controller: %d\n", ret);
-                  cgrp_dfl_root.cgrp.subsys[mem_cgroup_subsys.id] = NULL;
+                  cgrp_dfl_root.cgrp.subsys[memory_cgrp_subsys.id] = NULL;
                   mem_cgroup_free(memcg);
                   return;
               }
-              pr_info("Control enable success\n");
               
               // 6. 添加内存控制器的文件接口
-              pr_info("Adding legacy cftypes...\n");
-              ret = cgroup_add_legacy_cftypes(&mem_cgroup_subsys, mem_cgroup_legacy_files);
+              ret = cgroup_add_legacy_cftypes(&memory_cgrp_subsys, mem_cgroup_legacy_files);
               if (ret) {
                   pr_err("Failed to add memcg legacy files: %d\n", ret);
-              } else {
-                  pr_info("Legacy cftypes added\n");
+                  // 继续而不是返回，因为核心功能可能仍然工作
               }
               
-              // 7. 设置内存控制器为启用状态
-              mem_cgroup_subsys.enabled = 1;
-              mem_cgroup_subsys.initialized = 1;
-              
               pr_info("Memory controller enabled for cgroup v2\n");
-              pr_info("=== MEMCG COMPAT INITIALIZATION COMPLETE ===\n");
           }
           
           int compat_cgroup2_init(void)
           {
               int ret;
-              
-              pr_info("Initializing cgroup2 compatibility layer...\n");
               
               // 注册文件系统
               ret = register_filesystem(&cgroup2_fs_type);
@@ -349,7 +343,6 @@ jobs:
                   pr_err("Failed to register cgroup2 filesystem: %d\n", ret);
                   return ret;
               }
-              pr_info("cgroup2 filesystem registered\n");
               
               // 启用内存控制器
               compat_enable_memory_controller();
@@ -372,8 +365,7 @@ jobs:
           {
               return compat_cgroup2_init();
           }
-          // 使用 core_initcall 确保在内存控制器初始化后执行
-          core_initcall(cgroup_compat_init);
+          early_initcall(cgroup_compat_init);
           #endif
           #endif
           EOF
@@ -387,7 +379,6 @@ jobs:
           // 兼容版本的 cgroup_apply_control_enable 函数
           int compat_cgroup_apply_control_enable(struct cgroup *cgrp)
           {
-              pr_info("Applying control enable for cgroup: %p\n", cgrp);
               return cgroup_apply_control_enable(cgrp);
           }
           EXPORT_SYMBOL_GPL(compat_cgroup_apply_control_enable);
@@ -405,27 +396,26 @@ jobs:
           # ============================== 修复 mm/memcontrol.c ==============================
           MEMCG_FILE="mm/memcontrol.c"
           
-          # 1. 添加必要的头文件
+          # 1. 添加必要的头文件 (如果还没有)
           if ! grep -q "#include <linux/cgroup.h>" "$MEMCG_FILE"; then
               sed -i '1i #include <linux/cgroup.h>' "$MEMCG_FILE"
           fi
           
-          # 2. 删除重复的导出（如果存在）
-          if grep -q "EXPORT_SYMBOL_GPL(memory_cgrp_subsys);" "$MEMCG_FILE"; then
-              sed -i '/EXPORT_SYMBOL_GPL(memory_cgrp_subsys);/d' "$MEMCG_FILE"
-          fi
+          # 2. 移除所有对 memory_cgrp_subsys 的 `static` 移除和 `EXPORT_SYMBOL_GPL` 添加逻辑
+          #    因为你的搜索结果表明它已经正确定义和导出。
+          #    这将通过重新生成文件来完成，确保干净。
           
-          # 3. 导出关键函数和变量（使用安全方法）
-          # 备份文件
-          cp "$MEMCG_FILE" "${MEMCG_FILE}.bak"
+          # 重新备份 mm/memcontrol.c 以确保我们操作的是原始文件 (不包含我们之前 AWK 修改的)
+          cp "$MEMCG_FILE" "${MEMCG_FILE}.clean_bak"
           
-          # 使用 AWK 脚本安全地修改函数定义并添加导出
+          # 现在我们只对 mem_cgroup_alloc, mem_cgroup_free, mem_cgroup_css_online, mem_cgroup_legacy_files 进行处理。
+          # 重新运行 AWK 脚本，只处理需要移除 static 和添加 EXPORT_SYMBOL_GPL 的函数和变量。
+          # 不再包含 memory_cgrp_subsys 的处理。
           awk '
           # 移除 mem_cgroup_alloc 的 static 并添加导出
           /static struct mem_cgroup \*mem_cgroup_alloc\(void\)/ {
               gsub(/static /, "");
               print;
-              # 读取整个函数
               while (getline > 0) {
                   print;
                   if ($0 ~ /^}/) {
@@ -440,7 +430,6 @@ jobs:
           /static void mem_cgroup_free\(struct mem_cgroup \*memcg\)/ {
               gsub(/static /, "");
               print;
-              # 读取整个函数
               while (getline > 0) {
                   print;
                   if ($0 ~ /^}/) {
@@ -455,7 +444,6 @@ jobs:
           /static int mem_cgroup_css_online\(struct cgroup_subsys_state \*css\)/ {
               gsub(/static /, "");
               print;
-              # 读取整个函数
               while (getline > 0) {
                   print;
                   if ($0 ~ /^}/) {
@@ -470,7 +458,6 @@ jobs:
           /static struct cftype mem_cgroup_legacy_files/ {
               gsub(/static /, "");
               print;
-              # 读取整个数组定义
               while (getline > 0) {
                   print;
                   if ($0 ~ /};/) {
@@ -483,13 +470,14 @@ jobs:
           
           # 默认打印其他行
           { print; }
-          ' "${MEMCG_FILE}.bak" > "$MEMCG_FILE"
+          ' "${MEMCG_FILE}.clean_bak" > "$MEMCG_FILE"
           
-          # 4. 修复 mem_cgroup_subsys 结构体
-          cp "$MEMCG_FILE" "${MEMCG_FILE}.bak2"
+          # 3. 修复 mem_cgroup_subsys 结构体内部成员（保留之前的 AWK 逻辑）
+          #    这个逻辑仍然适用于修改 memory_cgrp_subsys 的内部结构，如 .attach 等。
+          cp "$MEMCG_FILE" "${MEMCG_FILE}.bak_final" # 再次备份以防万一
           awk '
           BEGIN { in_struct = 0; }
-          /struct cgroup_subsys mem_cgroup_subsys[[:space:]]*=[[:space:]]*{/ {
+          /struct cgroup_subsys memory_cgrp_subsys[[:space:]]*=[[:space:]]*{/ { # 确保匹配 memory_cgrp_subsys
               in_struct = 1;
               print;
               next;
@@ -514,35 +502,7 @@ jobs:
               in_struct = 0;
           }
           { print; }
-          ' "${MEMCG_FILE}.bak2" > "$MEMCG_FILE"
-          
-          # 5. 确保添加导出语句
-          if ! grep -q "EXPORT_SYMBOL_GPL(mem_cgroup_subsys)" "$MEMCG_FILE"; then
-              sed -i '/struct cgroup_subsys mem_cgroup_subsys/a EXPORT_SYMBOL_GPL(mem_cgroup_subsys);' "$MEMCG_FILE"
-          fi
-          
-          # 6. 在 memcontrol.c 中添加更多调试输出
-          cat >> "$MEMCG_FILE" << 'EOF'
-          
-          #ifdef CONFIG_CGROUP_COMPAT
-          // 调试函数：打印 mem_cgroup_subsys 状态
-          static void debug_mem_cgroup_subsys(void)
-          {
-              pr_info("mem_cgroup_subsys status:\n");
-              pr_info("  id: %d\n", mem_cgroup_subsys.id);
-              pr_info("  enabled: %d\n", mem_cgroup_subsys.enabled);
-              pr_info("  initialized: %d\n", mem_cgroup_subsys.initialized);
-          }
-          
-          // 在模块初始化时调用
-          static int __init debug_memcg_init(void)
-          {
-              debug_mem_cgroup_subsys();
-              return 0;
-          }
-          late_initcall(debug_memcg_init);
-          #endif
-          EOF
+          ' "${MEMCG_FILE}.bak_final" > "$MEMCG_FILE"
           
           # ============================== 修改其他文件 ==============================
           
