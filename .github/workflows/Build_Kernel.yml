@@ -694,6 +694,11 @@ jobs:
             -e CGROUP_CPUACCT \
             -e CGROUP_DEBUG
 
+          # Add debug output to check .config content immediately after defconfig
+          echo "DEBUG: out/.config content after defconfig (before scripts/config):"
+          cat out/.config | grep "CONFIG_CGROUP_COMPAT" || echo "CONFIG_CGROUP_COMPAT not found at this stage."
+          echo "--------------------------------------------------"
+
           # 开启一些附加优化配置
           echo "🔧 Applying basic optimized configurations... (应用基本优化配置)"
           scripts/config --file out/.config \
@@ -798,8 +803,18 @@ jobs:
             -e LRU_GEN \
             -e LRU_GEN_ENABLED
           
+          # Add debug output to check .config content immediately after defconfig
+          echo "DEBUG: out/.config content after defconfig (before scripts/config):"
+          cat out/.config | grep "CONFIG_CGROUP_COMPAT" || echo "CONFIG_CGROUP_COMPAT not found at this stage."
+          echo "--------------------------------------------------"
+
           echo "🔧 Syncing .config with Kconfig rules (同步 .config 与 Kconfig 规则)"
-           make $MAKE_ARGS olddefconfig O=out # 确保强制启用的配置被 Kconfig 系统处理
+          make $MAKE_ARGS olddefconfig O=out # 确保强制启用的配置被 Kconfig 系统处理
+
+          # Add debug output to check .config content immediately after defconfig
+          echo "DEBUG: out/.config content after defconfig (before scripts/config):"
+          cat out/.config | grep "CONFIG_CGROUP_COMPAT" || echo "CONFIG_CGROUP_COMPAT not found at this stage."
+          echo "--------------------------------------------------"
 
           # 根据系统类型修改配置
           if [ "$SYSTEM" == "MIUI" ]; then
@@ -893,6 +908,11 @@ jobs:
                   -e RTMM
           fi
             
+          # Add debug output to check .config content immediately after defconfig
+          echo "DEBUG: out/.config content after defconfig (before scripts/config):"
+          cat out/.config | grep "CONFIG_CGROUP_COMPAT" || echo "CONFIG_CGROUP_COMPAT not found at this stage."
+          echo "--------------------------------------------------"
+
           # 根据 KernelSU 变体修改配置
           if [ "$KSU" == "SukiSU-Ultra" ] || [ "$KSU" == "RKSU" ]; then
               echo "🔧 Applying SukiSU-Ultra & RKSU Configuration... (应用 SukiSU-Ultra & RKSU 配置)"
@@ -928,6 +948,11 @@ jobs:
                   -e KPM
           fi
             
+          # Add debug output to check .config content immediately after defconfig
+          echo "DEBUG: out/.config content after defconfig (before scripts/config):"
+          cat out/.config | grep "CONFIG_CGROUP_COMPAT" || echo "CONFIG_CGROUP_COMPAT not found at this stage."
+          echo "--------------------------------------------------"
+
           # 修改内核版本号
           if [ ! -z "$VERSION" ]; then
               echo "🔧 设置自定义内核版本: $VERSION"
