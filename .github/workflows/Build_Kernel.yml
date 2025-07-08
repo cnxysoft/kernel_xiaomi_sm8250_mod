@@ -680,6 +680,7 @@ jobs:
           echo "🔧 Applying cgroup v2 compatibility configurations... (应用 cgroup v2 兼容配置)"
           scripts/config --file out/.config \
             -e CGROUP_COMPAT \
+            -e CGROUP_COMPAT_DEBUG \
             -e CGROUPS \
             -e MEMCG \
             -e MEMCG_SWAP \
@@ -796,7 +797,10 @@ jobs:
             --set-val PRIME_CPU_MASK 128 \
             -e LRU_GEN \
             -e LRU_GEN_ENABLED
-            
+          
+          echo "🔧 Syncing .config with Kconfig rules (同步 .config 与 Kconfig 规则)"
+          make $MAKE_ARGS olddefconfig # 确保强制启用的配置被 Kconfig 系统处理
+
           # 根据系统类型修改配置
           if [ "$SYSTEM" == "MIUI" ]; then
               echo "🔧 Apply MIUI specific configurations... (应用 MIUI 特定配置)"
