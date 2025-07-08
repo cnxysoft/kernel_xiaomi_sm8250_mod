@@ -799,7 +799,7 @@ jobs:
             -e LRU_GEN_ENABLED
           
           echo "🔧 Syncing .config with Kconfig rules (同步 .config 与 Kconfig 规则)"
-          make $MAKE_ARGS olddefconfig # 确保强制启用的配置被 Kconfig 系统处理
+           make $MAKE_ARGS olddefconfig O=out # 确保强制启用的配置被 Kconfig 系统处理
 
           # 根据系统类型修改配置
           if [ "$SYSTEM" == "MIUI" ]; then
